@@ -1,14 +1,14 @@
 use std::sync::Arc;
 
 use dashmap::DashMap;
+use pg_analysis::WorkspaceIndex;
 use pg_analysis::completion::{self, CompletionContext};
 use pg_analysis::hover;
 use pg_analysis::resolve;
 use pg_analysis::symbols::QualifiedName;
-use pg_analysis::WorkspaceIndex;
 use pg_format::Style;
-use pg_parse::document::Document;
 use pg_parse::ParserPool;
+use pg_parse::document::Document;
 use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::*;
 use tower_lsp::{Client, LanguageServer};
@@ -49,15 +49,17 @@ impl Backend {
 
     fn node_at_position<'a>(
         tree: &'a tree_sitter::Tree,
+        source: &str,
         line: u32,
         character: u32,
     ) -> Option<tree_sitter::Node<'a>> {
+        let line_text = source.lines().nth(line as usize).unwrap_or("");
+        let byte_col = utf16_to_byte_offset(line_text, character as usize);
         let point = tree_sitter::Point {
             row: line as usize,
-            column: character as usize,
+            column: byte_col,
         };
-        tree.root_node()
-            .descendant_for_point_range(point, point)
+        tree.root_node().descendant_for_point_range(point, point)
     }
 
     fn name_at_position(
@@ -66,13 +68,13 @@ impl Backend {
         line: u32,
         character: u32,
     ) -> Option<(String, Range)> {
-        let node = Self::node_at_position(tree, line, character)?;
+        let node = Self::node_at_position(tree, source, line, character)?;
         let text = node.utf8_text(source.as_bytes()).ok()?;
         let name = text.trim().replace('"', "");
         if name.is_empty() {
             return None;
         }
-        let range = node_range(node);
+        let range = node_range(node, source);
         Some((name, range))
     }
 
@@ -82,9 +84,11 @@ impl Backend {
         line: u32,
         character: u32,
     ) -> CompletionContext {
+        let line_text = source.lines().nth(line as usize).unwrap_or("");
+        let byte_col = utf16_to_byte_offset(line_text, character as usize);
         let point = tree_sitter::Point {
             row: line as usize,
-            column: character as usize,
+            column: byte_col,
         };
 
         if let Some(node) = tree.root_node().descendant_for_point_range(point, point) {
@@ -131,42 +135,85 @@ fn utf16_to_byte_offset(line: &str, utf16_col: usize) -> usize {
     byte_offset.min(line.len())
 }
 
-fn node_range(node: tree_sitter::Node) -> Range {
-    Range {
-        start: Position {
-            line: node.start_position().row as u32,
-            character: node.start_position().column as u32,
-        },
-        end: Position {
-            line: node.end_position().row as u32,
-            character: node.end_position().column as u32,
-        },
+/// Convert a byte column offset to UTF-16 code units within a line.
+fn byte_col_to_utf16(line: &str, byte_col: usize) -> u32 {
+    let end = byte_col.min(line.len());
+    line[..end].encode_utf16().count() as u32
+}
+
+/// Build a Position from a line number and byte column, converting to UTF-16 if source is available.
+fn make_position(line: usize, byte_col: usize, lines: &[&str]) -> Position {
+    let line_text = lines.get(line).copied().unwrap_or("");
+    Position {
+        line: line as u32,
+        character: byte_col_to_utf16(line_text, byte_col),
     }
 }
 
-fn symbol_range(sym: &pg_analysis::symbols::Symbol) -> Range {
+/// Build an LSP Range from a tree-sitter node, converting byte columns to UTF-16.
+fn node_range(node: tree_sitter::Node, source: &str) -> Range {
+    let lines: Vec<&str> = source.lines().collect();
     Range {
-        start: Position {
-            line: sym.start_line as u32,
-            character: sym.start_col as u32,
-        },
-        end: Position {
-            line: sym.end_line as u32,
-            character: sym.end_col as u32,
-        },
+        start: make_position(
+            node.start_position().row,
+            node.start_position().column,
+            &lines,
+        ),
+        end: make_position(node.end_position().row, node.end_position().column, &lines),
     }
 }
 
-fn ref_range(r: &pg_analysis::symbols::SymbolRef) -> Range {
-    Range {
-        start: Position {
-            line: r.start_line as u32,
-            character: r.start_col as u32,
-        },
-        end: Position {
-            line: r.end_line as u32,
-            character: r.end_col as u32,
-        },
+/// Build an LSP Range from a Symbol's statement range, converting byte columns to UTF-16.
+/// `source` should be the file containing the symbol; pass the document map to look it up.
+fn symbol_range_with_source(
+    sym: &pg_analysis::symbols::Symbol,
+    docs: &DashMap<String, Document>,
+) -> Range {
+    if let Some(doc) = docs.get(&sym.uri) {
+        let source = doc.text();
+        let lines: Vec<&str> = source.lines().collect();
+        Range {
+            start: make_position(sym.start_line, sym.start_col, &lines),
+            end: make_position(sym.end_line, sym.end_col, &lines),
+        }
+    } else {
+        // Fallback: byte == utf16 (correct for ASCII)
+        Range {
+            start: Position {
+                line: sym.start_line as u32,
+                character: sym.start_col as u32,
+            },
+            end: Position {
+                line: sym.end_line as u32,
+                character: sym.end_col as u32,
+            },
+        }
+    }
+}
+
+/// Build an LSP Range from a SymbolRef, converting byte columns to UTF-16.
+fn ref_range_with_source(
+    r: &pg_analysis::symbols::SymbolRef,
+    docs: &DashMap<String, Document>,
+) -> Range {
+    if let Some(doc) = docs.get(&r.uri) {
+        let source = doc.text();
+        let lines: Vec<&str> = source.lines().collect();
+        Range {
+            start: make_position(r.start_line, r.start_col, &lines),
+            end: make_position(r.end_line, r.end_col, &lines),
+        }
+    } else {
+        Range {
+            start: Position {
+                line: r.start_line as u32,
+                character: r.start_col as u32,
+            },
+            end: Position {
+                line: r.end_line as u32,
+                character: r.end_col as u32,
+            },
+        }
     }
 }
 
@@ -185,15 +232,14 @@ fn symbol_kind_to_lsp(kind: pg_analysis::SymbolKind) -> tower_lsp::lsp_types::Sy
         SK::Type | SK::Domain => tower_lsp::lsp_types::SymbolKind::TYPE_PARAMETER,
         SK::Extension => tower_lsp::lsp_types::SymbolKind::PACKAGE,
         SK::Role => tower_lsp::lsp_types::SymbolKind::OBJECT,
-        SK::Policy | SK::Publication | SK::Subscription => {
-            tower_lsp::lsp_types::SymbolKind::OBJECT
-        }
+        SK::Policy | SK::Publication | SK::Subscription => tower_lsp::lsp_types::SymbolKind::OBJECT,
     }
 }
 
 fn symbol_to_symbol_information(
     sym: &pg_analysis::symbols::Symbol,
     uri: Url,
+    docs: &DashMap<String, Document>,
 ) -> SymbolInformation {
     #[allow(deprecated)]
     SymbolInformation {
@@ -203,7 +249,7 @@ fn symbol_to_symbol_information(
         deprecated: None,
         location: Location {
             uri,
-            range: symbol_range(sym),
+            range: symbol_range_with_source(sym, docs),
         },
         container_name: None,
     }
@@ -301,8 +347,9 @@ impl LanguageServer for Backend {
                 label: item.label,
                 kind: Some(match item.kind {
                     completion::CompletionKind::Keyword => CompletionItemKind::KEYWORD,
-                    completion::CompletionKind::Table
-                    | completion::CompletionKind::View => CompletionItemKind::CLASS,
+                    completion::CompletionKind::Table | completion::CompletionKind::View => {
+                        CompletionItemKind::CLASS
+                    }
                     completion::CompletionKind::Column => CompletionItemKind::FIELD,
                     completion::CompletionKind::Function
                     | completion::CompletionKind::Procedure => CompletionItemKind::FUNCTION,
@@ -387,7 +434,7 @@ impl LanguageServer for Backend {
             .filter_map(|sym| {
                 Some(Location {
                     uri: Url::parse(&sym.uri).ok()?,
-                    range: symbol_range(sym),
+                    range: symbol_range_with_source(sym, &self.documents),
                 })
             })
             .collect();
@@ -423,7 +470,7 @@ impl LanguageServer for Backend {
             .filter_map(|r| {
                 Some(Location {
                     uri: Url::parse(&r.uri).ok()?,
-                    range: ref_range(r),
+                    range: ref_range_with_source(r, &self.documents),
                 })
             })
             .collect();
@@ -444,7 +491,9 @@ impl LanguageServer for Backend {
 
         let lsp_symbols: Vec<SymbolInformation> = symbols
             .iter()
-            .map(|sym| symbol_to_symbol_information(sym, params.text_document.uri.clone()))
+            .map(|sym| {
+                symbol_to_symbol_information(sym, params.text_document.uri.clone(), &self.documents)
+            })
             .collect();
 
         Ok(Some(DocumentSymbolResponse::Flat(lsp_symbols)))
@@ -459,7 +508,7 @@ impl LanguageServer for Backend {
             .iter()
             .filter_map(|sym| {
                 let uri = Url::parse(&sym.uri).ok()?;
-                Some(symbol_to_symbol_information(sym, uri))
+                Some(symbol_to_symbol_information(sym, uri, &self.documents))
             })
             .collect();
 
@@ -527,7 +576,7 @@ impl LanguageServer for Backend {
         for r in &self.index.find_references(&name) {
             if let Ok(ref_uri) = Url::parse(&r.uri) {
                 changes.entry(ref_uri).or_default().push(TextEdit {
-                    range: ref_range(r),
+                    range: ref_range_with_source(r, &self.documents),
                     new_text: new_name.clone(),
                 });
             }
@@ -537,8 +586,15 @@ impl LanguageServer for Backend {
         let defs = resolve::resolve_name(&self.index, &QualifiedName::new(name));
         for sym in &defs {
             if let Ok(sym_uri) = Url::parse(&sym.uri) {
-                changes.entry(sym_uri).or_default().push(TextEdit {
-                    range: Range {
+                let name_range = if let Some(doc) = self.documents.get(&sym.uri) {
+                    let src = doc.text();
+                    let lines: Vec<&str> = src.lines().collect();
+                    Range {
+                        start: make_position(sym.name_start_line, sym.name_start_col, &lines),
+                        end: make_position(sym.name_end_line, sym.name_end_col, &lines),
+                    }
+                } else {
+                    Range {
                         start: Position {
                             line: sym.name_start_line as u32,
                             character: sym.name_start_col as u32,
@@ -547,7 +603,10 @@ impl LanguageServer for Backend {
                             line: sym.name_end_line as u32,
                             character: sym.name_end_col as u32,
                         },
-                    },
+                    }
+                };
+                changes.entry(sym_uri).or_default().push(TextEdit {
+                    range: name_range,
                     new_text: new_name.clone(),
                 });
             }
@@ -559,10 +618,7 @@ impl LanguageServer for Backend {
         }))
     }
 
-    async fn formatting(
-        &self,
-        params: DocumentFormattingParams,
-    ) -> Result<Option<Vec<TextEdit>>> {
+    async fn formatting(&self, params: DocumentFormattingParams) -> Result<Option<Vec<TextEdit>>> {
         let uri = params.text_document.uri.to_string();
 
         let Some(doc) = self.documents.get(&uri) else {
@@ -580,7 +636,10 @@ impl LanguageServer for Backend {
                     return Ok(None);
                 }
                 let line_count = source.lines().count();
-                let (end_line, end_char) = if line_count == 0 {
+                let (end_line, end_char) = if source.ends_with('\n') {
+                    // Trailing newline: position is start of the next (empty) line.
+                    (line_count as u32, 0)
+                } else if line_count == 0 {
                     (0, 0)
                 } else {
                     let last_line_len = source.lines().last().map(|l| l.len()).unwrap_or(0);

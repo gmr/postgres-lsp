@@ -50,10 +50,7 @@ impl WorkspaceIndex {
             for child in &sym.children {
                 let child_arc = Arc::new(child.clone());
                 let child_key = (child.kind, child.name.name.to_lowercase());
-                self.by_name
-                    .entry(child_key)
-                    .or_default()
-                    .push(child_arc);
+                self.by_name.entry(child_key).or_default().push(child_arc);
             }
         }
 
@@ -217,10 +214,18 @@ mod tests {
         drop(guard);
 
         index.update_file("file:///test.sql", &tree, sql);
-        assert!(!index.find_definitions(SymbolKind::Table, "users").is_empty());
+        assert!(
+            !index
+                .find_definitions(SymbolKind::Table, "users")
+                .is_empty()
+        );
 
         index.remove_file("file:///test.sql");
-        assert!(index.find_definitions(SymbolKind::Table, "users").is_empty());
+        assert!(
+            index
+                .find_definitions(SymbolKind::Table, "users")
+                .is_empty()
+        );
     }
 
     #[test]

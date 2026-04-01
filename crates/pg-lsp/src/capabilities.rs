@@ -23,14 +23,14 @@ pub fn server_capabilities() -> ServerCapabilities {
         references_provider: Some(OneOf::Left(true)),
         document_symbol_provider: Some(OneOf::Left(true)),
         workspace_symbol_provider: Some(OneOf::Left(true)),
-        semantic_tokens_provider: Some(
-            SemanticTokensServerCapabilities::SemanticTokensOptions(SemanticTokensOptions {
+        semantic_tokens_provider: Some(SemanticTokensServerCapabilities::SemanticTokensOptions(
+            SemanticTokensOptions {
                 legend: LEGEND.clone(),
                 full: Some(SemanticTokensFullOptions::Bool(true)),
                 range: Some(false),
                 ..Default::default()
-            }),
-        ),
+            },
+        )),
         folding_range_provider: Some(FoldingRangeProviderCapability::Simple(true)),
         rename_provider: Some(OneOf::Left(true)),
         document_formatting_provider: Some(OneOf::Left(true)),

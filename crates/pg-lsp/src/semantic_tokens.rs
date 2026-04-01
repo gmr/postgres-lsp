@@ -40,7 +40,14 @@ pub fn collect_semantic_tokens(root: Node, source: &str) -> Vec<SemanticToken> {
     // Pre-split source into lines for efficient UTF-16 offset computation.
     let lines: Vec<&str> = source.lines().collect();
 
-    collect_tokens_recursive(root, source, &lines, &mut tokens, &mut prev_line, &mut prev_start);
+    collect_tokens_recursive(
+        root,
+        source,
+        &lines,
+        &mut tokens,
+        &mut prev_line,
+        &mut prev_start,
+    );
     tokens
 }
 
@@ -118,14 +125,15 @@ fn classify_node(kind: &str) -> Option<u32> {
 
     match kind {
         // Literals
-        "string_literal" | "bit_string_literal" | "hex_string_literal"
-        | "dollar_quoted_string" => Some(1), // STRING
+        "string_literal" | "bit_string_literal" | "hex_string_literal" | "dollar_quoted_string" => {
+            Some(1)
+        } // STRING
         "integer_literal" | "float_literal" => Some(2), // NUMBER
-        "comment" => Some(3),                            // COMMENT
+        "comment" => Some(3),                           // COMMENT
 
         // Operators
-        "operator" | "+" | "-" | "*" | "/" | "%" | "^" | "<" | ">" | "=" | "!=" | "<>"
-        | "<=" | ">=" | "||" | "::" => Some(4), // OPERATOR
+        "operator" | "+" | "-" | "*" | "/" | "%" | "^" | "<" | ">" | "=" | "!=" | "<>" | "<="
+        | ">=" | "||" | "::" => Some(4), // OPERATOR
 
         // Identifiers
         "identifier" | "ColId" => Some(5), // VARIABLE

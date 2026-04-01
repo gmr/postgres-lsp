@@ -1,13 +1,11 @@
 use libpgfmt::style::Style;
 
 /// Options for SQL formatting.
-#[derive(Debug, Clone)]
-#[derive(Default)]
+#[derive(Debug, Clone, Default)]
 pub struct FormatOptions {
     /// The formatting style to use.
     pub style: Style,
 }
-
 
 /// Format SQL or PL/pgSQL source code.
 ///
@@ -28,9 +26,9 @@ fn is_plpgsql(source: &str) -> bool {
     if trimmed.starts_with("DECLARE") {
         return true;
     }
-    if trimmed.starts_with("BEGIN") {
+    if let Some(after_begin) = trimmed.strip_prefix("BEGIN") {
         // SQL transaction blocks: BEGIN [WORK|TRANSACTION], BEGIN ISOLATION
-        let rest = trimmed["BEGIN".len()..].trim_start();
+        let rest = after_begin.trim_start();
         if rest.is_empty()
             || rest.starts_with(';')
             || rest.starts_with("WORK")
@@ -59,15 +57,24 @@ mod tests {
         let sql = "select a, b from users where active = true";
         let result = format_sql(sql, &FormatOptions::default()).unwrap();
         // Should contain uppercase keywords with the default (Aweber) style.
-        assert!(result.contains("SELECT"), "expected uppercase SELECT, got: {result}");
-        assert!(result.contains("FROM"), "expected uppercase FROM, got: {result}");
+        assert!(
+            result.contains("SELECT"),
+            "expected uppercase SELECT, got: {result}"
+        );
+        assert!(
+            result.contains("FROM"),
+            "expected uppercase FROM, got: {result}"
+        );
     }
 
     #[test]
     fn format_create_table() {
         let sql = "create table users (id int primary key, name text not null);";
         let result = format_sql(sql, &FormatOptions::default()).unwrap();
-        assert!(result.contains("CREATE TABLE"), "expected uppercase CREATE TABLE, got: {result}");
+        assert!(
+            result.contains("CREATE TABLE"),
+            "expected uppercase CREATE TABLE, got: {result}"
+        );
     }
 
     #[test]
@@ -77,14 +84,19 @@ mod tests {
             style: Style::Mozilla,
         };
         let result = format_sql(sql, &opts).unwrap();
-        assert!(result.contains("SELECT"), "expected uppercase SELECT with Mozilla style");
+        assert!(
+            result.contains("SELECT"),
+            "expected uppercase SELECT with Mozilla style"
+        );
     }
 
     #[test]
     fn format_plpgsql_block() {
         let code = "begin\nraise notice 'hello';\nend;";
         let result = format_sql(code, &FormatOptions::default()).unwrap();
-        assert!(result.contains("BEGIN") || result.contains("begin"),
-            "expected formatted PL/pgSQL, got: {result}");
+        assert!(
+            result.contains("BEGIN") || result.contains("begin"),
+            "expected formatted PL/pgSQL, got: {result}"
+        );
     }
 }

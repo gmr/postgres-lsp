@@ -141,12 +141,15 @@ fn collect_definitions(node: Node, source: &str, uri: &str, symbols: &mut Vec<Sy
 fn try_extract_definition(node: Node, source: &str, uri: &str) -> Option<Symbol> {
     // Each arm returns (kind, name, name_node) where name_node has the position of the name.
     let result: Option<(SymbolKind, QualifiedName, Node)> = match node.kind() {
-        "CreateStmt" => find_descendant(node, "qualified_name")
-            .and_then(|n| extract_qualified_name_node(n, source).map(|qn| (SymbolKind::Table, qn, n))),
-        "CreateMatViewStmt" => find_descendant(node, "qualified_name")
-            .and_then(|n| extract_qualified_name_node(n, source).map(|qn| (SymbolKind::MaterializedView, qn, n))),
-        "ViewStmt" => find_descendant(node, "qualified_name")
-            .and_then(|n| extract_qualified_name_node(n, source).map(|qn| (SymbolKind::View, qn, n))),
+        "CreateStmt" => find_descendant(node, "qualified_name").and_then(|n| {
+            extract_qualified_name_node(n, source).map(|qn| (SymbolKind::Table, qn, n))
+        }),
+        "CreateMatViewStmt" => find_descendant(node, "qualified_name").and_then(|n| {
+            extract_qualified_name_node(n, source).map(|qn| (SymbolKind::MaterializedView, qn, n))
+        }),
+        "ViewStmt" => find_descendant(node, "qualified_name").and_then(|n| {
+            extract_qualified_name_node(n, source).map(|qn| (SymbolKind::View, qn, n))
+        }),
         "CreateFunctionStmt" => {
             let kind = if has_child_kind(node, "kw_procedure") {
                 SymbolKind::Procedure
@@ -157,20 +160,25 @@ fn try_extract_definition(node: Node, source: &str, uri: &str) -> Option<Symbol>
                 .and_then(|n| extract_func_name(n, source).map(|qn| (kind, qn, n)))
         }
         "IndexStmt" => extract_name_or_col_id(node, source, SymbolKind::Index),
-        "CreateSeqStmt" => find_descendant(node, "qualified_name")
-            .and_then(|n| extract_qualified_name_node(n, source).map(|qn| (SymbolKind::Sequence, qn, n))),
+        "CreateSeqStmt" => find_descendant(node, "qualified_name").and_then(|n| {
+            extract_qualified_name_node(n, source).map(|qn| (SymbolKind::Sequence, qn, n))
+        }),
         "CreateSchemaStmt" => find_descendant(node, "ColId")
             .and_then(|n| extract_leaf_name(n, source).map(|qn| (SymbolKind::Schema, qn, n))),
         "CompositeTypeStmt" | "CreateEnumStmt" | "CreateRangeStmt" => {
             find_descendant(node, "any_name")
-                .and_then(|n| extract_qualified_name_node(n, source).map(|qn| (SymbolKind::Type, qn, n)))
+                .and_then(|n| {
+                    extract_qualified_name_node(n, source).map(|qn| (SymbolKind::Type, qn, n))
+                })
                 .or_else(|| {
-                    find_descendant(node, "qualified_name")
-                        .and_then(|n| extract_qualified_name_node(n, source).map(|qn| (SymbolKind::Type, qn, n)))
+                    find_descendant(node, "qualified_name").and_then(|n| {
+                        extract_qualified_name_node(n, source).map(|qn| (SymbolKind::Type, qn, n))
+                    })
                 })
         }
-        "CreateDomainStmt" => find_descendant(node, "any_name")
-            .and_then(|n| extract_qualified_name_node(n, source).map(|qn| (SymbolKind::Domain, qn, n))),
+        "CreateDomainStmt" => find_descendant(node, "any_name").and_then(|n| {
+            extract_qualified_name_node(n, source).map(|qn| (SymbolKind::Domain, qn, n))
+        }),
         "CreateExtensionStmt" => extract_name_or_col_id(node, source, SymbolKind::Extension),
         "CreateTrigStmt" => extract_name_or_col_id(node, source, SymbolKind::Trigger),
         "CreateRoleStmt" => find_descendant(node, "RoleId")
@@ -185,8 +193,9 @@ fn try_extract_definition(node: Node, source: &str, uri: &str) -> Option<Symbol>
             .and_then(|n| extract_leaf_name(n, source).map(|qn| (SymbolKind::Publication, qn, n))),
         "CreateSubscriptionStmt" => find_descendant(node, "ColId")
             .and_then(|n| extract_leaf_name(n, source).map(|qn| (SymbolKind::Subscription, qn, n))),
-        "CreateForeignTableStmt" => find_descendant(node, "qualified_name")
-            .and_then(|n| extract_qualified_name_node(n, source).map(|qn| (SymbolKind::ForeignTable, qn, n))),
+        "CreateForeignTableStmt" => find_descendant(node, "qualified_name").and_then(|n| {
+            extract_qualified_name_node(n, source).map(|qn| (SymbolKind::ForeignTable, qn, n))
+        }),
         _ => None,
     };
 
@@ -292,7 +301,9 @@ fn extract_func_name(node: Node, source: &str) -> Option<QualifiedName> {
                 }
             }
         }
-        if let (Some(s), Some(n)) = (schema, name) { return Some(QualifiedName::with_schema(s, n)) }
+        if let (Some(s), Some(n)) = (schema, name) {
+            return Some(QualifiedName::with_schema(s, n));
+        }
     }
 
     // Simple function name: func_name -> type_function_name -> identifier/kw_*
@@ -375,26 +386,27 @@ fn extract_columns(table_node: Node, source: &str, uri: &str) -> Vec<Symbol> {
 fn collect_column_defs(node: Node, source: &str, uri: &str, columns: &mut Vec<Symbol>) {
     if node.kind() == "columnDef" {
         if let Some(col_id) = find_descendant(node, "ColId")
-            && let Some(name) = leaf_text(col_id, source) {
-                let def_text = node.utf8_text(source.as_bytes()).unwrap_or("").to_string();
-                columns.push(Symbol {
-                    kind: SymbolKind::Column,
-                    name: QualifiedName::new(name),
-                    uri: uri.to_string(),
-                    start_byte: node.start_byte(),
-                    end_byte: node.end_byte(),
-                    start_line: node.start_position().row,
-                    start_col: node.start_position().column,
-                    end_line: node.end_position().row,
-                    end_col: node.end_position().column,
-                    name_start_line: col_id.start_position().row,
-                    name_start_col: col_id.start_position().column,
-                    name_end_line: col_id.end_position().row,
-                    name_end_col: col_id.end_position().column,
-                    definition_text: def_text,
-                    children: Vec::new(),
-                });
-            }
+            && let Some(name) = leaf_text(col_id, source)
+        {
+            let def_text = node.utf8_text(source.as_bytes()).unwrap_or("").to_string();
+            columns.push(Symbol {
+                kind: SymbolKind::Column,
+                name: QualifiedName::new(name),
+                uri: uri.to_string(),
+                start_byte: node.start_byte(),
+                end_byte: node.end_byte(),
+                start_line: node.start_position().row,
+                start_col: node.start_position().column,
+                end_line: node.end_position().row,
+                end_col: node.end_position().column,
+                name_start_line: col_id.start_position().row,
+                name_start_col: col_id.start_position().column,
+                name_end_line: col_id.end_position().row,
+                name_end_col: col_id.end_position().column,
+                definition_text: def_text,
+                children: Vec::new(),
+            });
+        }
         return;
     }
 
@@ -413,24 +425,30 @@ pub fn extract_references(tree: &Tree, source: &str, uri: &str) -> Vec<SymbolRef
 
 fn collect_references(node: Node, source: &str, uri: &str, refs: &mut Vec<SymbolRef>) {
     match node.kind() {
-        "columnref" | "relation_expr" | "func_application" => {
-            // Extract the name from within this reference node.
-            let name = match node.kind() {
-                "func_application" => {
-                    find_descendant(node, "func_name")
-                        .and_then(|n| extract_func_name(n, source))
-                }
-                _ => {
-                    // For columnref/relation_expr, extract qualified name from
-                    // descendant nodes rather than using the full node text,
-                    // which may include aliases or trailing operators.
-                    extract_qualified_name_node(node, source)
-                        .or_else(|| {
-                            find_descendant(node, "ColId")
-                                .and_then(|n| extract_leaf_name(n, source))
-                        })
-                }
-            };
+        "func_application" => {
+            // For function calls, index only the callee name (not the full
+            // node which includes arguments), then continue recursing into
+            // children so argument references are also indexed.
+            if let Some(name_node) = find_descendant(node, "func_name")
+                && let Some(name) = extract_func_name(name_node, source)
+            {
+                refs.push(SymbolRef {
+                    name,
+                    uri: uri.to_string(),
+                    start_byte: name_node.start_byte(),
+                    end_byte: name_node.end_byte(),
+                    start_line: name_node.start_position().row,
+                    start_col: name_node.start_position().column,
+                    end_line: name_node.end_position().row,
+                    end_col: name_node.end_position().column,
+                });
+            }
+            // Don't return — fall through to recurse into arguments.
+        }
+        "columnref" | "relation_expr" => {
+            let name = extract_qualified_name_node(node, source).or_else(|| {
+                find_descendant(node, "ColId").and_then(|n| extract_leaf_name(n, source))
+            });
 
             if let Some(name) = name {
                 refs.push(SymbolRef {
@@ -443,7 +461,6 @@ fn collect_references(node: Node, source: &str, uri: &str, refs: &mut Vec<Symbol
                     end_line: node.end_position().row,
                     end_col: node.end_position().column,
                 });
-                // Don't recurse into reference nodes we've already extracted.
                 return;
             }
         }

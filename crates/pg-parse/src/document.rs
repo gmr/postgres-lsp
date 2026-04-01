@@ -65,6 +65,9 @@ impl Document {
         let new_end_col = new_end_byte - self.rope.line_to_byte(new_end_line);
 
         // Inform tree-sitter about the edit for incremental re-parsing.
+        // Point.column must be byte offsets, not UTF-16 code units.
+        let start_byte_col = start_byte - self.rope.line_to_byte(start_line);
+        let old_end_byte_col = old_end_byte - self.rope.line_to_byte(end_line);
         if let Some(ref mut tree) = self.tree {
             tree.edit(&InputEdit {
                 start_byte,
@@ -72,11 +75,11 @@ impl Document {
                 new_end_byte,
                 start_position: Point {
                     row: start_line,
-                    column: start_col,
+                    column: start_byte_col,
                 },
                 old_end_position: Point {
                     row: end_line,
-                    column: end_col,
+                    column: old_end_byte_col,
                 },
                 new_end_position: Point {
                     row: new_end_line,
@@ -232,11 +235,7 @@ mod tests {
     #[test]
     fn multiline_edit() {
         let pool = ParserPool::new();
-        let mut doc = Document::new(
-            "test.sql".into(),
-            "SELECT\n  1\nFROM\n  t;",
-            &pool,
-        );
+        let mut doc = Document::new("test.sql".into(), "SELECT\n  1\nFROM\n  t;", &pool);
         // Replace "1" with "a, b"
         doc.apply_edit(1, 2, 1, 3, "a, b", &pool);
         assert_eq!(doc.text(), "SELECT\n  a, b\nFROM\n  t;");

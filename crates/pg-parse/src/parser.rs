@@ -83,9 +83,10 @@ impl Drop for ParserGuard<'_> {
     fn drop(&mut self) {
         if let Some(parser) = self.parser.take()
             && let Ok(mut pool) = self.pool.lock()
-                && pool.len() < MAX_POOL_SIZE {
-                    pool.push(parser);
-                }
+            && pool.len() < MAX_POOL_SIZE
+        {
+            pool.push(parser);
+        }
     }
 }
 

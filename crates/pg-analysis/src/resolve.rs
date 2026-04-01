@@ -9,10 +9,7 @@ use crate::symbols::{QualifiedName, Symbol};
 /// 1. Exact qualified match (schema.name)
 /// 2. Match in `public` schema
 /// 3. Match in any schema
-pub fn resolve_name(
-    index: &WorkspaceIndex,
-    name: &QualifiedName,
-) -> Vec<Arc<Symbol>> {
+pub fn resolve_name(index: &WorkspaceIndex, name: &QualifiedName) -> Vec<Arc<Symbol>> {
     let results = index.resolve(name);
     if !results.is_empty() {
         return results;

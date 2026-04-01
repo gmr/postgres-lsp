@@ -42,11 +42,7 @@ impl InjectedRegion {
 /// and parse them with the PL/pgSQL grammar.
 ///
 /// This handles the first level of injection: SQL -> PL/pgSQL.
-pub fn extract_plpgsql_bodies(
-    tree: &Tree,
-    source: &str,
-    pool: &ParserPool,
-) -> Vec<InjectedRegion> {
+pub fn extract_plpgsql_bodies(tree: &Tree, source: &str, pool: &ParserPool) -> Vec<InjectedRegion> {
     let mut regions = Vec::new();
     find_dollar_quoted_bodies(tree.root_node(), source, pool, &mut regions);
     regions
@@ -61,18 +57,19 @@ fn find_dollar_quoted_bodies(
     // Look for dollar_quoted_string nodes inside function/procedure definitions
     // that have LANGUAGE plpgsql.
     if node.kind() == "dollar_quoted_string"
-        && is_inside_plpgsql_function(node, source)
-        && let Some(body) = extract_dollar_quote_content(node, source) {
-            let mut guard = pool.acquire(Language::PlPgSql);
-            if let Some(tree) = guard.parser_mut().parse(&body.text, None) {
-                regions.push(InjectedRegion {
-                    parent_start_byte: body.start_byte,
-                    language: Language::PlPgSql,
-                    tree,
-                    text: body.text,
-                });
-            }
+        && is_plpgsql_function_body(node, source)
+        && let Some(body) = extract_dollar_quote_content(node, source)
+    {
+        let mut guard = pool.acquire(Language::PlPgSql);
+        if let Some(tree) = guard.parser_mut().parse(&body.text, None) {
+            regions.push(InjectedRegion {
+                parent_start_byte: body.start_byte,
+                language: Language::PlPgSql,
+                tree,
+                text: body.text,
+            });
         }
+    }
 
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
@@ -80,48 +77,90 @@ fn find_dollar_quoted_bodies(
     }
 }
 
-/// Check if a node is inside a CREATE FUNCTION/PROCEDURE with LANGUAGE plpgsql.
-fn is_inside_plpgsql_function(node: Node, source: &str) -> bool {
-    let mut current = node.parent();
-    while let Some(parent) = current {
-        if parent.kind() == "CreateFunctionStmt" {
-            // Look for a LANGUAGE clause that specifies plpgsql
-            let mut cursor = parent.walk();
-            for child in parent.children(&mut cursor) {
-                if child.kind() == "func_body_item" || child.kind() == "createfunc_opt_item" {
-                    let text = child
-                        .utf8_text(source.as_bytes())
-                        .unwrap_or("")
-                        .to_uppercase();
-                    if text.contains("LANGUAGE") && text.contains("PLPGSQL") {
+/// Check if a dollar_quoted_string node is the function body in the AS clause
+/// of a CreateFunctionStmt whose LANGUAGE is plpgsql.
+///
+/// Expected tree path: dollar_quoted_string → Sconst → func_as →
+/// createfunc_opt_item (with kw_as) → createfunc_opt_list → ... → CreateFunctionStmt
+fn is_plpgsql_function_body(node: Node, source: &str) -> bool {
+    // Walk up to verify the node is inside a func_as (the AS clause body).
+    let func_stmt = {
+        let mut current = node.parent();
+        let mut found_func_as = false;
+        let mut result = None;
+        while let Some(p) = current {
+            if p.kind() == "func_as" {
+                found_func_as = true;
+            }
+            if p.kind() == "CreateFunctionStmt" {
+                if found_func_as {
+                    result = Some(p);
+                }
+                break;
+            }
+            current = p.parent();
+        }
+        result
+    };
+
+    let Some(stmt) = func_stmt else {
+        return false;
+    };
+
+    // Find the LANGUAGE option structurally in the CreateFunctionStmt.
+    has_language_plpgsql(stmt, source)
+}
+
+/// Check if a CreateFunctionStmt has LANGUAGE plpgsql by walking its
+/// createfunc_opt_item children looking for kw_language followed by
+/// a NonReservedWord_or_Sconst containing "plpgsql".
+fn has_language_plpgsql(stmt: Node, source: &str) -> bool {
+    fn check_opt_items(node: Node, source: &str) -> bool {
+        if node.kind() == "createfunc_opt_item" {
+            let mut found_language = false;
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                if child.kind() == "kw_language" {
+                    found_language = true;
+                }
+                if found_language
+                    && (child.kind() == "NonReservedWord_or_Sconst"
+                        || child.kind() == "NonReservedWord"
+                        || child.kind() == "identifier")
+                {
+                    let text = child.utf8_text(source.as_bytes()).unwrap_or("");
+                    // Recurse into wrapper nodes to find the leaf identifier.
+                    let lang = extract_leaf_text(child, source).unwrap_or(text);
+                    if lang.eq_ignore_ascii_case("plpgsql") {
                         return true;
                     }
                 }
-                // Also check direct keyword sequences
-                if child.kind() == "kw_language" {
-                    // The next sibling should be the language name
-                    if let Some(next) = child.next_sibling() {
-                        let lang = next
-                            .utf8_text(source.as_bytes())
-                            .unwrap_or("")
-                            .to_uppercase();
-                        if lang.trim() == "PLPGSQL" {
-                            return true;
-                        }
-                    }
-                }
             }
-            // Check the full statement text as a fallback
-            let stmt_text = parent
-                .utf8_text(source.as_bytes())
-                .unwrap_or("")
-                .to_uppercase();
-            return stmt_text.contains("LANGUAGE PLPGSQL")
-                || stmt_text.contains("LANGUAGE 'PLPGSQL'");
+            return false;
         }
-        current = parent.parent();
+        let mut cursor = node.walk();
+        for child in node.children(&mut cursor) {
+            if check_opt_items(child, source) {
+                return true;
+            }
+        }
+        false
     }
-    false
+    check_opt_items(stmt, source)
+}
+
+/// Extract the deepest leaf text from a node (finds identifier or keyword).
+fn extract_leaf_text<'a>(node: Node<'a>, source: &'a str) -> Option<&'a str> {
+    if node.child_count() == 0 {
+        return node.utf8_text(source.as_bytes()).ok();
+    }
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if let Some(text) = extract_leaf_text(child, source) {
+            return Some(text);
+        }
+    }
+    None
 }
 
 struct DollarQuoteContent {
@@ -199,5 +238,40 @@ $$;"#;
         assert_eq!(region.to_local_byte(105), Some(5));
         assert_eq!(region.to_local_byte(99), None);
         assert_eq!(region.to_local_byte(110), None);
+    }
+
+    #[test]
+    fn dollar_quoted_set_value_not_injected() {
+        let pool = ParserPool::new();
+        let source = "SET search_path = $$public$$;";
+
+        let mut guard = pool.acquire(Language::Postgres);
+        let tree = guard.parser_mut().parse(source, None).unwrap();
+        drop(guard);
+
+        let regions = extract_plpgsql_bodies(&tree, source, &pool);
+        assert!(
+            regions.is_empty(),
+            "dollar-quoted SET value should not be treated as PL/pgSQL"
+        );
+    }
+
+    #[test]
+    fn sql_language_function_not_injected() {
+        let pool = ParserPool::new();
+        // Function whose body mentions "LANGUAGE plpgsql" in a string but
+        // whose actual LANGUAGE is sql — should NOT be treated as PL/pgSQL.
+        let source =
+            r#"CREATE FUNCTION test() RETURNS text LANGUAGE sql AS $$SELECT 'LANGUAGE plpgsql'$$;"#;
+
+        let mut guard = pool.acquire(Language::Postgres);
+        let tree = guard.parser_mut().parse(source, None).unwrap();
+        drop(guard);
+
+        let regions = extract_plpgsql_bodies(&tree, source, &pool);
+        assert!(
+            regions.is_empty(),
+            "LANGUAGE sql function should not be treated as PL/pgSQL"
+        );
     }
 }

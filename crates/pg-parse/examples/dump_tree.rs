@@ -30,6 +30,8 @@ fn main() {
         "CREATE TABLE users (id int, name text);",
         "CREATE TABLE public.users (id int);",
         "CREATE FUNCTION add(a int, b int) RETURNS int LANGUAGE sql AS 'SELECT a + b';",
+        "CREATE FUNCTION test() RETURNS void LANGUAGE plpgsql AS $$BEGIN RAISE NOTICE 'hi'; END;$$;",
+        "SET search_path = $$public$$;",
     ];
 
     for source in sources {
