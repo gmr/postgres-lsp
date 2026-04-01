@@ -3,17 +3,17 @@ members = ["crates/*"]
 resolver = "2"
 
 [workspace.package]
-version = "1.0.0"
+version = "1.0.1"
 edition = "2024"
 license = "BSD-3-Clause"
 repository = "https://github.com/gmr/postgres-lsp"
 readme = "README.md"
 
 [workspace.dependencies]
-postgres-lsp-parse = { path = "crates/postgres-lsp-parse", version = "1.0.0" }
-postgres-lsp-analysis = { path = "crates/postgres-lsp-analysis", version = "1.0.0" }
-postgres-lsp-format = { path = "crates/postgres-lsp-format", version = "1.0.0" }
-postgres-lsp-schema = { path = "crates/postgres-lsp-schema", version = "1.0.0" }
+postgres-lsp-parse = { path = "crates/postgres-lsp-parse", version = "1.0.1" }
+postgres-lsp-analysis = { path = "crates/postgres-lsp-analysis", version = "1.0.1" }
+postgres-lsp-format = { path = "crates/postgres-lsp-format", version = "1.0.1" }
+postgres-lsp-schema = { path = "crates/postgres-lsp-schema", version = "1.0.1" }
 tree-sitter = "0.26"
 tree-sitter-postgres = "1.1"
 tower-lsp = "0.20"
