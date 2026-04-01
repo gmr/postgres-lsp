@@ -53,20 +53,12 @@ release version: (set-version version)
     git tag -a "v{{ version }}" -m "v{{ version }}"
     git push origin main --tags
 
-# Publish to crates.io (dry run) — in dependency order
+# Publish to crates.io (dry run)
 publish-dry:
-    cargo publish --dry-run -p postgres-lsp-parse
-    cargo publish --dry-run -p postgres-lsp-format
-    cargo publish --dry-run -p postgres-lsp-analysis
-    cargo publish --dry-run -p postgres-lsp-schema
     cargo publish --dry-run -p postgres-lsp
 
-# Publish to crates.io — in dependency order
+# Publish to crates.io
 publish:
-    cargo publish -p postgres-lsp-parse
-    cargo publish -p postgres-lsp-format
-    cargo publish -p postgres-lsp-analysis
-    cargo publish -p postgres-lsp-schema
     cargo publish -p postgres-lsp
 
 # Clean build artifacts
