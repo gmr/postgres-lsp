@@ -3,6 +3,8 @@ use std::sync::Arc;
 use dashmap::DashMap;
 use tree_sitter::Tree;
 
+use pg_parse::injection::InjectedRegion;
+
 use crate::symbols::{self, QualifiedName, Symbol, SymbolKind, SymbolRef};
 
 /// A concurrent workspace-wide symbol index.
@@ -29,24 +31,40 @@ impl WorkspaceIndex {
 
     /// Re-index a file: remove old entries and extract new ones from the tree.
     ///
-    /// Prepares all new entries before modifying shared maps to minimize the
-    /// window where concurrent queries may observe missing symbols.
-    pub fn update_file(&self, uri: &str, tree: &Tree, source: &str) {
-        let symbols = symbols::extract_symbols(tree, source, uri);
+    /// Also extracts PL/pgSQL symbols from any injected regions.
+    pub fn update_file(&self, uri: &str, tree: &Tree, source: &str, injections: &[InjectedRegion]) {
+        let mut all_symbols = symbols::extract_symbols(tree, source, uri);
         let refs = symbols::extract_references(tree, source, uri);
 
-        let symbol_arcs: Vec<Arc<Symbol>> = symbols.into_iter().map(Arc::new).collect();
+        // Extract PL/pgSQL symbols from injected regions.
+        for region in injections {
+            let parent_line = source[..region.parent_start_byte].matches('\n').count();
+            let parent_col = region.parent_start_byte
+                - source[..region.parent_start_byte]
+                    .rfind('\n')
+                    .map(|p| p + 1)
+                    .unwrap_or(0);
+
+            let plpgsql_syms = symbols::extract_plpgsql_symbols(
+                &region.tree,
+                &region.text,
+                uri,
+                parent_line,
+                parent_col,
+            );
+            all_symbols.extend(plpgsql_syms);
+        }
+
+        let symbol_arcs: Vec<Arc<Symbol>> = all_symbols.into_iter().map(Arc::new).collect();
         let ref_arcs: Vec<Arc<SymbolRef>> = refs.into_iter().map(Arc::new).collect();
 
         // Remove old entries, then insert new ones.
         self.remove_file(uri);
 
-        // Index by name
         for sym in &symbol_arcs {
             let key = (sym.kind, sym.name.name.to_lowercase());
             self.by_name.entry(key).or_default().push(Arc::clone(sym));
 
-            // Also index children (columns)
             for child in &sym.children {
                 let child_arc = Arc::new(child.clone());
                 let child_key = (child.kind, child.name.name.to_lowercase());
@@ -196,7 +214,7 @@ mod tests {
         let tree = guard.parser_mut().parse(sql, None).unwrap();
         drop(guard);
 
-        index.update_file("file:///test.sql", &tree, sql);
+        index.update_file("file:///test.sql", &tree, sql, &[]);
 
         let results = index.find_definitions(SymbolKind::Table, "users");
         assert_eq!(results.len(), 1);
@@ -213,7 +231,7 @@ mod tests {
         let tree = guard.parser_mut().parse(sql, None).unwrap();
         drop(guard);
 
-        index.update_file("file:///test.sql", &tree, sql);
+        index.update_file("file:///test.sql", &tree, sql, &[]);
         assert!(
             !index
                 .find_definitions(SymbolKind::Table, "users")
@@ -238,7 +256,7 @@ mod tests {
         let tree = guard.parser_mut().parse(sql, None).unwrap();
         drop(guard);
 
-        index.update_file("file:///test.sql", &tree, sql);
+        index.update_file("file:///test.sql", &tree, sql, &[]);
 
         let results = index.search("user");
         assert!(results.len() >= 2);

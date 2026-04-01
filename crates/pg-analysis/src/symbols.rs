@@ -21,6 +21,8 @@ pub enum SymbolKind {
     Publication,
     Subscription,
     ForeignTable,
+    Variable,
+    Cursor,
 }
 
 impl SymbolKind {
@@ -44,6 +46,8 @@ impl SymbolKind {
             Self::Publication => "publication",
             Self::Subscription => "subscription",
             Self::ForeignTable => "foreign table",
+            Self::Variable => "variable",
+            Self::Cursor => "cursor",
         }
     }
 }
@@ -473,6 +477,133 @@ fn collect_references(node: Node, source: &str, uri: &str, refs: &mut Vec<Symbol
     }
 }
 
+/// Extract PL/pgSQL variable and cursor declarations from a PL/pgSQL parse tree.
+///
+/// The `parent_start_byte`, `parent_start_line`, and `parent_start_col` map
+/// local positions to the parent document's coordinate space.
+pub fn extract_plpgsql_symbols(
+    tree: &Tree,
+    source: &str,
+    uri: &str,
+    parent_start_line: usize,
+    parent_start_col: usize,
+) -> Vec<Symbol> {
+    let mut symbols = Vec::new();
+    collect_plpgsql_decls(
+        tree.root_node(),
+        source,
+        uri,
+        parent_start_line,
+        parent_start_col,
+        &mut symbols,
+    );
+    symbols
+}
+
+fn collect_plpgsql_decls(
+    node: Node,
+    source: &str,
+    uri: &str,
+    parent_start_line: usize,
+    parent_start_col: usize,
+    symbols: &mut Vec<Symbol>,
+) {
+    if node.kind() == "decl_statement" {
+        let name = find_child(node, "decl_varname").and_then(|n| leaf_text(n, source));
+        let type_text = find_child(node, "decl_datatype")
+            .and_then(|n| n.utf8_text(source.as_bytes()).ok())
+            .unwrap_or("")
+            .trim()
+            .to_string();
+
+        let is_cursor = find_child(node, "decl_cursor_query").is_some()
+            || type_text.to_uppercase().contains("CURSOR");
+
+        if let Some(var_name) = name {
+            let kind = if is_cursor {
+                SymbolKind::Cursor
+            } else {
+                SymbolKind::Variable
+            };
+
+            let (start_line, start_col) = map_position(
+                node.start_position().row,
+                node.start_position().column,
+                parent_start_line,
+                parent_start_col,
+            );
+            let (end_line, end_col) = map_position(
+                node.end_position().row,
+                node.end_position().column,
+                parent_start_line,
+                parent_start_col,
+            );
+
+            // Name node position
+            let name_node = find_child(node, "decl_varname").unwrap();
+            let (name_sl, name_sc) = map_position(
+                name_node.start_position().row,
+                name_node.start_position().column,
+                parent_start_line,
+                parent_start_col,
+            );
+            let (name_el, name_ec) = map_position(
+                name_node.end_position().row,
+                name_node.end_position().column,
+                parent_start_line,
+                parent_start_col,
+            );
+
+            let def_text = node.utf8_text(source.as_bytes()).unwrap_or("").to_string();
+
+            symbols.push(Symbol {
+                kind,
+                name: QualifiedName::new(var_name),
+                uri: uri.to_string(),
+                start_byte: node.start_byte(),
+                end_byte: node.end_byte(),
+                start_line,
+                start_col,
+                end_line,
+                end_col,
+                name_start_line: name_sl,
+                name_start_col: name_sc,
+                name_end_line: name_el,
+                name_end_col: name_ec,
+                definition_text: def_text,
+                children: Vec::new(),
+            });
+        }
+        return;
+    }
+
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        collect_plpgsql_decls(
+            child,
+            source,
+            uri,
+            parent_start_line,
+            parent_start_col,
+            symbols,
+        );
+    }
+}
+
+/// Map a position within an injected region to the parent document.
+fn map_position(
+    local_line: usize,
+    local_col: usize,
+    parent_start_line: usize,
+    parent_start_col: usize,
+) -> (usize, usize) {
+    if local_line == 0 {
+        (parent_start_line, parent_start_col + local_col)
+    } else {
+        (parent_start_line + local_line, local_col)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use pg_parse::ParserPool;
@@ -523,5 +654,49 @@ mod tests {
         let tree = guard.parser_mut().parse(sql, None).unwrap();
         let refs = extract_references(&tree, sql, "test.sql");
         assert!(!refs.is_empty(), "should find references in SELECT");
+    }
+
+    #[test]
+    fn extract_plpgsql_variables() {
+        let pool = ParserPool::new();
+        let plpgsql = "DECLARE\n  v_count int;\n  v_name text;\nBEGIN\n  RETURN v_count;\nEND;";
+        let mut guard = pool.acquire(pg_parse::parser::Language::PlPgSql);
+        let tree = guard.parser_mut().parse(plpgsql, None).unwrap();
+        drop(guard);
+
+        let symbols = extract_plpgsql_symbols(&tree, plpgsql, "test.sql", 5, 0);
+        assert_eq!(symbols.len(), 2, "should find 2 variable declarations");
+        assert_eq!(symbols[0].kind, SymbolKind::Variable);
+        assert_eq!(symbols[0].name.name, "v_count");
+        assert_eq!(symbols[1].kind, SymbolKind::Variable);
+        assert_eq!(symbols[1].name.name, "v_name");
+    }
+
+    #[test]
+    fn plpgsql_variables_indexed_from_create_function() {
+        let pool = ParserPool::new();
+        let sql = r#"CREATE FUNCTION test() RETURNS int LANGUAGE plpgsql AS $$
+DECLARE
+  v_result int;
+BEGIN
+  v_result := 42;
+  RETURN v_result;
+END;
+$$;"#;
+        let doc = pg_parse::Document::new("test.sql".into(), sql, &pool);
+        let tree = doc.tree().unwrap();
+        let injections = doc.injections();
+
+        let index = crate::index::WorkspaceIndex::new();
+        index.update_file("file:///test.sql", tree, sql, injections);
+
+        // Should find the function
+        let funcs = index.find_definitions(SymbolKind::Function, "test");
+        assert_eq!(funcs.len(), 1);
+
+        // Should also find the PL/pgSQL variable
+        let vars = index.find_definitions(SymbolKind::Variable, "v_result");
+        assert_eq!(vars.len(), 1, "PL/pgSQL variable should be indexed");
+        assert_eq!(vars[0].name.name, "v_result");
     }
 }

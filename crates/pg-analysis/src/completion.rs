@@ -244,6 +244,8 @@ fn symbol_kind_to_completion(kind: SymbolKind) -> CompletionKind {
         | SymbolKind::Role
         | SymbolKind::Policy
         | SymbolKind::Publication
-        | SymbolKind::Subscription => CompletionKind::Table,
+        | SymbolKind::Subscription
+        | SymbolKind::Variable
+        | SymbolKind::Cursor => CompletionKind::Table,
     }
 }

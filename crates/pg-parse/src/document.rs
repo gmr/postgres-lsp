@@ -1,17 +1,19 @@
 use ropey::Rope;
 use tree_sitter::{InputEdit, Point, Tree};
 
+use crate::injection::{self, InjectedRegion};
 use crate::parser::{Language, ParserPool};
 
 /// A parsed SQL or PL/pgSQL document with incremental edit support.
 ///
-/// Maintains both the source text (as a `Rope` for efficient edits) and the
-/// current tree-sitter parse tree. Supports incremental re-parsing after edits.
+/// Maintains the source text, the primary parse tree, and any injected
+/// PL/pgSQL regions found within CREATE FUNCTION bodies.
 pub struct Document {
     uri: String,
     language: Language,
     rope: Rope,
     tree: Option<Tree>,
+    injections: Vec<InjectedRegion>,
 }
 
 impl Document {
@@ -21,12 +23,19 @@ impl Document {
         let rope = Rope::from_str(text);
         let mut guard = pool.acquire(language);
         let tree = guard.parser_mut().parse(text, None);
+        drop(guard);
+
+        let injections = tree
+            .as_ref()
+            .map(|t| injection::extract_plpgsql_bodies(t, text, pool))
+            .unwrap_or_default();
 
         Self {
             uri,
             language,
             rope,
             tree,
+            injections,
         }
     }
 
@@ -35,6 +44,13 @@ impl Document {
         self.rope = Rope::from_str(new_text);
         let mut guard = pool.acquire(self.language);
         self.tree = guard.parser_mut().parse(new_text, None);
+        drop(guard);
+
+        self.injections = self
+            .tree
+            .as_ref()
+            .map(|t| injection::extract_plpgsql_bodies(t, new_text, pool))
+            .unwrap_or_default();
     }
 
     /// Apply an incremental edit (LSP-style line/col range) and re-parse.
@@ -92,6 +108,13 @@ impl Document {
         let source = self.text();
         let mut guard = pool.acquire(self.language);
         self.tree = guard.parser_mut().parse(&source, self.tree.as_ref());
+        drop(guard);
+
+        self.injections = self
+            .tree
+            .as_ref()
+            .map(|t| injection::extract_plpgsql_bodies(t, &source, pool))
+            .unwrap_or_default();
     }
 
     pub fn uri(&self) -> &str {
@@ -104,6 +127,11 @@ impl Document {
 
     pub fn tree(&self) -> Option<&Tree> {
         self.tree.as_ref()
+    }
+
+    /// Get the injected PL/pgSQL regions (function bodies).
+    pub fn injections(&self) -> &[InjectedRegion] {
+        &self.injections
     }
 
     /// Get the full source text as a String.
@@ -135,13 +163,41 @@ impl Document {
         line_start + byte_offset
     }
 
-    /// Collect all ERROR and MISSING nodes from the parse tree as diagnostics.
+    /// Collect all ERROR and MISSING nodes from the parse tree and injected regions.
     pub fn errors(&self) -> Vec<ParseError> {
         let Some(tree) = &self.tree else {
             return vec![];
         };
         let mut errors = Vec::new();
-        collect_errors(tree.root_node(), &mut errors);
+        collect_errors(tree.root_node(), &mut errors, 0, 0);
+
+        // Collect errors from injected PL/pgSQL regions.
+        let source = self.text();
+        for region in &self.injections {
+            let mut injection_errors = Vec::new();
+            collect_errors(region.tree.root_node(), &mut injection_errors, 0, 0);
+
+            // Map injection-local positions to parent document positions.
+            let parent_line = source[..region.parent_start_byte].matches('\n').count();
+            let parent_col = region.parent_start_byte
+                - source[..region.parent_start_byte]
+                    .rfind('\n')
+                    .map(|p| p + 1)
+                    .unwrap_or(0);
+
+            for mut err in injection_errors {
+                if err.start_line == 0 {
+                    err.start_col += parent_col;
+                }
+                if err.end_line == 0 {
+                    err.end_col += parent_col;
+                }
+                err.start_line += parent_line;
+                err.end_line += parent_line;
+                errors.push(err);
+            }
+        }
+
         errors
     }
 }
@@ -156,7 +212,12 @@ pub struct ParseError {
     pub message: String,
 }
 
-fn collect_errors(node: tree_sitter::Node, errors: &mut Vec<ParseError>) {
+fn collect_errors(
+    node: tree_sitter::Node,
+    errors: &mut Vec<ParseError>,
+    _line_offset: usize,
+    _col_offset: usize,
+) {
     if node.is_error() {
         errors.push(ParseError {
             start_line: node.start_position().row,
@@ -177,7 +238,7 @@ fn collect_errors(node: tree_sitter::Node, errors: &mut Vec<ParseError>) {
 
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
-        collect_errors(child, errors);
+        collect_errors(child, errors, _line_offset, _col_offset);
     }
 }
 
@@ -251,5 +312,29 @@ mod tests {
             detect_language("file:///path/to/schema.sql"),
             Language::Postgres
         );
+    }
+
+    #[test]
+    fn plpgsql_injections_detected() {
+        let pool = ParserPool::new();
+        let sql = r#"CREATE FUNCTION test() RETURNS void LANGUAGE plpgsql AS $$
+BEGIN
+  RAISE NOTICE 'hello';
+END;
+$$;"#;
+        let doc = Document::new("test.sql".into(), sql, &pool);
+        assert!(doc.tree().is_some());
+        assert!(
+            !doc.injections().is_empty(),
+            "should detect PL/pgSQL injection"
+        );
+        assert!(doc.injections()[0].text.contains("BEGIN"));
+    }
+
+    #[test]
+    fn no_injections_in_plain_sql() {
+        let pool = ParserPool::new();
+        let doc = Document::new("test.sql".into(), "SELECT 1;", &pool);
+        assert!(doc.injections().is_empty());
     }
 }

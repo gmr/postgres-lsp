@@ -213,7 +213,7 @@ mod tests {
         drop(guard);
 
         let index = WorkspaceIndex::new();
-        index.update_file("file:///test.sql", &tree, sql);
+        index.update_file("file:///test.sql", &tree, sql, &[]);
         (index, sql.to_string())
     }
 

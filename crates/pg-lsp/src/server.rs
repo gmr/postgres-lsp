@@ -40,7 +40,8 @@ impl Backend {
 
     async fn publish_diagnostics(&self, uri: &Url, doc: &Document) {
         if let Some(tree) = doc.tree() {
-            self.index.update_file(uri.as_str(), tree, &doc.text());
+            self.index
+                .update_file(uri.as_str(), tree, &doc.text(), doc.injections());
         }
         let diags = diagnostics::to_diagnostics(&doc.errors());
         self.client
@@ -234,6 +235,8 @@ fn symbol_kind_to_lsp(kind: pg_analysis::SymbolKind) -> tower_lsp::lsp_types::Sy
         SK::Extension => tower_lsp::lsp_types::SymbolKind::PACKAGE,
         SK::Role => tower_lsp::lsp_types::SymbolKind::OBJECT,
         SK::Policy | SK::Publication | SK::Subscription => tower_lsp::lsp_types::SymbolKind::OBJECT,
+        SK::Variable => tower_lsp::lsp_types::SymbolKind::VARIABLE,
+        SK::Cursor => tower_lsp::lsp_types::SymbolKind::VARIABLE,
     }
 }
 
