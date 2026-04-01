@@ -37,6 +37,13 @@ pub fn server_capabilities() -> ServerCapabilities {
             },
         )),
         folding_range_provider: Some(FoldingRangeProviderCapability::Simple(true)),
+        code_action_provider: Some(CodeActionProviderCapability::Options(CodeActionOptions {
+            code_action_kinds: Some(vec![
+                CodeActionKind::QUICKFIX,
+                CodeActionKind::REFACTOR_REWRITE,
+            ]),
+            ..Default::default()
+        })),
         rename_provider: Some(OneOf::Left(true)),
         document_formatting_provider: Some(OneOf::Left(true)),
         ..Default::default()

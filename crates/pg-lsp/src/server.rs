@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use dashmap::DashMap;
 use pg_analysis::WorkspaceIndex;
+use pg_analysis::code_actions;
 use pg_analysis::completion::{self, CompletionContext};
 use pg_analysis::hover;
 use pg_analysis::resolve;
@@ -607,6 +608,88 @@ impl LanguageServer for Backend {
         let mut ranges = Vec::new();
         collect_folding_ranges(tree.root_node(), &mut ranges);
         Ok(Some(ranges))
+    }
+
+    async fn code_action(&self, params: CodeActionParams) -> Result<Option<CodeActionResponse>> {
+        let uri = params.text_document.uri.to_string();
+
+        let Some(doc) = self.documents.get(&uri) else {
+            return Ok(None);
+        };
+        let Some(tree) = doc.tree() else {
+            return Ok(None);
+        };
+        let source = doc.text();
+
+        let start_line_text = source
+            .lines()
+            .nth(params.range.start.line as usize)
+            .unwrap_or("");
+        let end_line_text = source
+            .lines()
+            .nth(params.range.end.line as usize)
+            .unwrap_or("");
+        let start_byte_col =
+            utf16_to_byte_offset(start_line_text, params.range.start.character as usize);
+        let end_byte_col = utf16_to_byte_offset(end_line_text, params.range.end.character as usize);
+
+        let actions = code_actions::compute_code_actions(
+            tree,
+            &source,
+            params.range.start.line as usize,
+            start_byte_col,
+            params.range.end.line as usize,
+            end_byte_col,
+        );
+
+        if actions.is_empty() {
+            return Ok(None);
+        }
+
+        let lines: Vec<&str> = source.lines().collect();
+        let lsp_actions: Vec<CodeActionOrCommand> = actions
+            .into_iter()
+            .map(|action| {
+                let kind = match action.kind {
+                    code_actions::CodeActionKind::QuickFix => CodeActionKind::QUICKFIX,
+                    code_actions::CodeActionKind::RefactorRewrite => {
+                        CodeActionKind::REFACTOR_REWRITE
+                    }
+                };
+
+                let start_text = lines.get(action.edit.start_line).copied().unwrap_or("");
+                let end_text = lines.get(action.edit.end_line).copied().unwrap_or("");
+
+                let edit = TextEdit {
+                    range: Range {
+                        start: Position {
+                            line: action.edit.start_line as u32,
+                            character: byte_col_to_utf16(start_text, action.edit.start_col),
+                        },
+                        end: Position {
+                            line: action.edit.end_line as u32,
+                            character: byte_col_to_utf16(end_text, action.edit.end_col),
+                        },
+                    },
+                    new_text: action.edit.new_text,
+                };
+
+                let mut changes = std::collections::HashMap::new();
+                changes.insert(params.text_document.uri.clone(), vec![edit]);
+
+                CodeActionOrCommand::CodeAction(tower_lsp::lsp_types::CodeAction {
+                    title: action.title,
+                    kind: Some(kind),
+                    edit: Some(WorkspaceEdit {
+                        changes: Some(changes),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                })
+            })
+            .collect();
+
+        Ok(Some(lsp_actions))
     }
 
     async fn rename(&self, params: RenameParams) -> Result<Option<WorkspaceEdit>> {
