@@ -1,6 +1,6 @@
 [package]
 name = "pg-parse"
-version = "1.0.0"
+version.workspace = true
 description = "PostgreSQL/PL-pgSQL document model with incremental tree-sitter parsing"
 edition.workspace = true
 license.workspace = true

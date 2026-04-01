@@ -3,11 +3,16 @@ members = ["crates/*"]
 resolver = "2"
 
 [workspace.package]
+version = "1.0.0"
 edition = "2024"
 license = "BSD-3-Clause"
 repository = "https://github.com/gmr/postgres-lsp"
 
 [workspace.dependencies]
+pg-parse = { path = "crates/pg-parse", version = "1.0.0" }
+pg-analysis = { path = "crates/pg-analysis", version = "1.0.0" }
+pg-format = { path = "crates/pg-format", version = "1.0.0" }
+pg-schema = { path = "crates/pg-schema", version = "1.0.0" }
 tree-sitter = "0.26"
 tree-sitter-postgres = "1.1"
 tower-lsp = "0.20"

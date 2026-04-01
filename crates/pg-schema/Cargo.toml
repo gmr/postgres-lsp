@@ -1,12 +1,12 @@
 [package]
 name = "pg-schema"
-version = "1.0.0"
+version.workspace = true
 description = "Live PostgreSQL database introspection via pg_catalog"
 edition.workspace = true
 license.workspace = true
 
 [dependencies]
-pg-analysis = { path = "../pg-analysis" }
+pg-analysis.workspace = true
 tokio-postgres.workspace = true
 tokio.workspace = true
 tracing.workspace = true
