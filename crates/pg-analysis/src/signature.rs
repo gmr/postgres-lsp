@@ -69,31 +69,28 @@ pub fn extract_signature(symbol: &Symbol, pool: &pg_parse::ParserPool) -> Option
 /// Find the enclosing func_application node and determine the active parameter index.
 ///
 /// Uses a tree-sitter Point (row, byte_column) for cursor position.
-/// Returns `(func_name, active_param_index)`.
+/// Returns `(qualified_name, active_param_index)`.
 pub fn find_active_function_call(
     tree: &tree_sitter::Tree,
     source: &str,
     row: usize,
     byte_col: usize,
-) -> Option<(String, usize)> {
+) -> Option<(QualifiedName, usize)> {
     let point = tree_sitter::Point {
         row,
         column: byte_col,
     };
-    let node = tree.root_node().descendant_for_point_range(point, point)?;
+    let cursor_node = tree.root_node().descendant_for_point_range(point, point)?;
+    let cursor_byte = cursor_node.start_byte();
 
     // Walk up to find the nearest func_application.
-    let mut current = Some(node);
+    let mut current = Some(cursor_node);
     while let Some(n) = current {
         if n.kind() == "func_application" {
             let name_node = symbols::find_child(n, "func_name")?;
             let qname = symbols::extract_func_name(name_node, source)?;
-            let byte_offset = tree
-                .root_node()
-                .descendant_for_point_range(point, point)?
-                .start_byte();
-            let param_index = count_commas_before(n, byte_offset);
-            return Some((qname.display(), param_index));
+            let param_index = count_commas_before(n, cursor_byte);
+            return Some((qname, param_index));
         }
         current = n.parent();
     }
@@ -109,8 +106,7 @@ pub fn signature_help(
     row: usize,
     byte_col: usize,
 ) -> Option<(SignatureInfo, usize)> {
-    let (func_name, active_param) = find_active_function_call(tree, source, row, byte_col)?;
-    let name = QualifiedName::new(func_name);
+    let (name, active_param) = find_active_function_call(tree, source, row, byte_col)?;
     let defs = resolve::resolve_name(index, &name);
 
     let func_sym = defs
@@ -159,7 +155,7 @@ fn collect_params(node: Node, source: &str, params: &mut Vec<ParamInfo>) {
         let param_name =
             symbols::find_child(node, "param_name").and_then(|n| symbols::leaf_text(n, source));
         let type_name = symbols::find_child(node, "func_type")
-            .and_then(|n| symbols::leaf_text(n, source))
+            .map(|n| node_full_text(n, source))
             .unwrap_or_else(|| "unknown".to_string());
         params.push(ParamInfo {
             name: param_name,
@@ -177,8 +173,17 @@ fn collect_params(node: Node, source: &str, params: &mut Vec<ParamInfo>) {
 /// Extract the return type from a CreateFunctionStmt.
 fn extract_return_type(func_stmt: Node, source: &str) -> Option<String> {
     let func_return = find_node_by_kind(func_stmt, "func_return")?;
-    // func_return contains func_type -> Typename; extract the leaf text.
-    symbols::leaf_text(func_return, source)
+    let func_type = find_node_by_kind(func_return, "func_type")?;
+    Some(node_full_text(func_type, source))
+}
+
+/// Get the full text of a node, preserving multi-token types like
+/// `double precision`, `timestamp with time zone`, `numeric(10,2)`, etc.
+fn node_full_text(node: Node, source: &str) -> String {
+    node.utf8_text(source.as_bytes())
+        .unwrap_or("unknown")
+        .trim()
+        .to_string()
 }
 
 fn find_node_by_kind<'a>(node: Node<'a>, kind: &str) -> Option<Node<'a>> {
@@ -243,7 +248,7 @@ mod tests {
         let result = find_active_function_call(&tree, sql, 0, 15);
         assert!(result.is_some());
         let (name, idx) = result.unwrap();
-        assert_eq!(name, "my_func");
+        assert_eq!(name.display(), "my_func");
         assert_eq!(idx, 0);
     }
 
@@ -259,7 +264,7 @@ mod tests {
         let result = find_active_function_call(&tree, sql, 0, 19);
         assert!(result.is_some());
         let (name, idx) = result.unwrap();
-        assert_eq!(name, "my_func");
+        assert_eq!(name.display(), "my_func");
         assert_eq!(idx, 1);
     }
 
@@ -275,7 +280,7 @@ mod tests {
         let result = find_active_function_call(&tree, sql, 0, 27);
         assert!(result.is_some());
         let (name, idx) = result.unwrap();
-        assert_eq!(name, "my_func");
+        assert_eq!(name.display(), "my_func");
         assert_eq!(idx, 2);
     }
 
