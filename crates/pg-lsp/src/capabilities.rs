@@ -18,6 +18,11 @@ pub fn server_capabilities() -> ServerCapabilities {
             resolve_provider: Some(false),
             ..Default::default()
         }),
+        signature_help_provider: Some(SignatureHelpOptions {
+            trigger_characters: Some(vec!["(".to_string(), ",".to_string()]),
+            retrigger_characters: Some(vec![",".to_string()]),
+            ..Default::default()
+        }),
         hover_provider: Some(HoverProviderCapability::Simple(true)),
         definition_provider: Some(OneOf::Left(true)),
         references_provider: Some(OneOf::Left(true)),

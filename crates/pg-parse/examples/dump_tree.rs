@@ -32,6 +32,8 @@ fn main() {
         "CREATE FUNCTION add(a int, b int) RETURNS int LANGUAGE sql AS 'SELECT a + b';",
         "CREATE FUNCTION test() RETURNS void LANGUAGE plpgsql AS $$BEGIN RAISE NOTICE 'hi'; END;$$;",
         "SET search_path = $$public$$;",
+        "SELECT my_func(1, 'hello', 42);",
+        "CREATE FUNCTION my_func(a int, b text, c int) RETURNS void LANGUAGE sql AS 'SELECT 1';",
     ];
 
     for source in sources {
