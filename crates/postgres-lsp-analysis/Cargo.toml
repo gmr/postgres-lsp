@@ -1,7 +1,6 @@
 [package]
 name = "postgres-lsp-analysis"
 version.workspace = true
-publish = false
 description = "Symbol extraction, workspace index, and name resolution for PostgreSQL"
 edition.workspace = true
 license.workspace = true

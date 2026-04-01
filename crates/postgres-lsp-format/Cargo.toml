@@ -1,7 +1,6 @@
 [package]
 name = "postgres-lsp-format"
 version.workspace = true
-publish = false
 description = "SQL formatting for the PostgreSQL LSP, powered by libpgfmt"
 edition.workspace = true
 license.workspace = true

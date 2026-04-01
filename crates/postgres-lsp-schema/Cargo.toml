@@ -1,7 +1,6 @@
 [package]
 name = "postgres-lsp-schema"
 version.workspace = true
-publish = false
 description = "Live PostgreSQL database introspection via pg_catalog"
 edition.workspace = true
 license.workspace = true
