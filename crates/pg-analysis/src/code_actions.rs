@@ -36,7 +36,12 @@ pub fn compute_code_actions(
     let mut actions = Vec::new();
 
     // 1. Add missing semicolon — look for MISSING nodes in the range.
-    collect_missing_semicolons(tree.root_node(), &mut actions);
+    collect_missing_semicolons(
+        tree.root_node(),
+        (start_line, start_col),
+        (end_line, end_col),
+        &mut actions,
+    );
 
     // 2. Uppercase keyword at cursor — if the cursor is on a lowercase keyword.
     if let Some(node) = tree.root_node().descendant_for_point_range(
@@ -56,27 +61,34 @@ pub fn compute_code_actions(
     actions
 }
 
-/// Find MISSING `;` nodes and offer to insert them.
-fn collect_missing_semicolons(node: Node, actions: &mut Vec<CodeAction>) {
+/// Find MISSING `;` nodes within the requested range and offer to insert them.
+fn collect_missing_semicolons(
+    node: Node,
+    start: (usize, usize),
+    end: (usize, usize),
+    actions: &mut Vec<CodeAction>,
+) {
     if node.is_missing() && node.kind() == ";" {
         let line = node.start_position().row;
         let col = node.start_position().column;
-        actions.push(CodeAction {
-            title: "Add missing semicolon".to_string(),
-            kind: CodeActionKind::QuickFix,
-            edit: TextEditAction {
-                start_line: line,
-                start_col: col,
-                end_line: line,
-                end_col: col,
-                new_text: ";".to_string(),
-            },
-        });
+        if (line, col) >= start && (line, col) <= end {
+            actions.push(CodeAction {
+                title: "Add missing semicolon".to_string(),
+                kind: CodeActionKind::QuickFix,
+                edit: TextEditAction {
+                    start_line: line,
+                    start_col: col,
+                    end_line: line,
+                    end_col: col,
+                    new_text: ";".to_string(),
+                },
+            });
+        }
     }
 
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
-        collect_missing_semicolons(child, actions);
+        collect_missing_semicolons(child, start, end, actions);
     }
 }
 
@@ -121,19 +133,22 @@ mod tests {
     #[test]
     fn missing_semicolon_action() {
         // Two statements without semicolons trigger errors in tree-sitter-postgres.
-        // The grammar may produce ERROR nodes rather than MISSING `;` nodes.
-        // This test verifies the code action infrastructure works when such
-        // nodes are present.
         let sql = "SELECT 1\nSELECT 2;";
         let tree = parse(sql);
-        let _actions = compute_code_actions(&tree, sql, 0, 0, 1, 9);
-        // The tree has errors (two statements without separator), confirming
-        // the grammar rejects this input. The MISSING `;` code action will
-        // trigger when the grammar actually emits a MISSING node for `;`.
         assert!(
             tree.root_node().has_error(),
             "grammar should report error for missing separator"
         );
+        let actions = compute_code_actions(&tree, sql, 0, 0, 1, 9);
+        // If the grammar emits MISSING `;` nodes, we should get a quick fix.
+        // If it emits ERROR nodes instead, the list may be empty, which is
+        // acceptable — the grammar controls which node types appear.
+        for action in &actions {
+            if action.title == "Add missing semicolon" {
+                assert_eq!(action.edit.new_text, ";");
+                assert!(matches!(action.kind, CodeActionKind::QuickFix));
+            }
+        }
     }
 
     #[test]
