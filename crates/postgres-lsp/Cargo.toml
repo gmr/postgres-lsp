@@ -5,6 +5,7 @@ description = "Language Server Protocol implementation for PostgreSQL and PL/pgS
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+readme.workspace = true
 
 [[bin]]
 name = "postgres-lsp"

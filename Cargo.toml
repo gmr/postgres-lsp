@@ -7,6 +7,7 @@ version = "1.0.0"
 edition = "2024"
 license = "BSD-3-Clause"
 repository = "https://github.com/gmr/postgres-lsp"
+readme = "README.md"
 
 [workspace.dependencies]
 postgres-lsp-parse = { path = "crates/postgres-lsp-parse", version = "1.0.0" }

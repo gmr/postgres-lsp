@@ -5,6 +5,7 @@ description = "Live PostgreSQL database introspection via pg_catalog"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+readme.workspace = true
 
 [dependencies]
 postgres-lsp-analysis.workspace = true
