@@ -71,6 +71,27 @@ impl WorkspaceIndex {
         self.references.insert(uri.to_string(), ref_arcs);
     }
 
+    /// Insert pre-built symbols (e.g., from database introspection).
+    /// Uses the provided URI to group them, allowing removal via `remove_file`.
+    pub fn load_symbols(&self, uri: &str, symbols: Vec<Symbol>) {
+        self.remove_file(uri);
+
+        let symbol_arcs: Vec<Arc<Symbol>> = symbols.into_iter().map(Arc::new).collect();
+
+        for sym in &symbol_arcs {
+            let key = (sym.kind, sym.name.name.to_lowercase());
+            self.by_name.entry(key).or_default().push(Arc::clone(sym));
+
+            for child in &sym.children {
+                let child_arc = Arc::new(child.clone());
+                let child_key = (child.kind, child.name.name.to_lowercase());
+                self.by_name.entry(child_key).or_default().push(child_arc);
+            }
+        }
+
+        self.definitions.insert(uri.to_string(), symbol_arcs);
+    }
+
     /// Remove all entries for a file.
     pub fn remove_file(&self, uri: &str) {
         if let Some((_, old_symbols)) = self.definitions.remove(uri) {
