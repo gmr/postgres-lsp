@@ -38,12 +38,7 @@ impl WorkspaceIndex {
 
         // Extract PL/pgSQL symbols from injected regions.
         for region in injections {
-            let parent_line = source[..region.parent_start_byte].matches('\n').count();
-            let parent_col = region.parent_start_byte
-                - source[..region.parent_start_byte]
-                    .rfind('\n')
-                    .map(|p| p + 1)
-                    .unwrap_or(0);
+            let (parent_line, parent_col) = region.parent_position(source);
 
             let plpgsql_syms = symbols::extract_plpgsql_symbols(
                 &region.tree,

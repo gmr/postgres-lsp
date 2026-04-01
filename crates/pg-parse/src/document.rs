@@ -169,21 +169,16 @@ impl Document {
             return vec![];
         };
         let mut errors = Vec::new();
-        collect_errors(tree.root_node(), &mut errors, 0, 0);
+        collect_errors(tree.root_node(), &mut errors);
 
         // Collect errors from injected PL/pgSQL regions.
         let source = self.text();
         for region in &self.injections {
             let mut injection_errors = Vec::new();
-            collect_errors(region.tree.root_node(), &mut injection_errors, 0, 0);
+            collect_errors(region.tree.root_node(), &mut injection_errors);
 
             // Map injection-local positions to parent document positions.
-            let parent_line = source[..region.parent_start_byte].matches('\n').count();
-            let parent_col = region.parent_start_byte
-                - source[..region.parent_start_byte]
-                    .rfind('\n')
-                    .map(|p| p + 1)
-                    .unwrap_or(0);
+            let (parent_line, parent_col) = region.parent_position(&source);
 
             for mut err in injection_errors {
                 if err.start_line == 0 {
@@ -212,12 +207,7 @@ pub struct ParseError {
     pub message: String,
 }
 
-fn collect_errors(
-    node: tree_sitter::Node,
-    errors: &mut Vec<ParseError>,
-    _line_offset: usize,
-    _col_offset: usize,
-) {
+fn collect_errors(node: tree_sitter::Node, errors: &mut Vec<ParseError>) {
     if node.is_error() {
         errors.push(ParseError {
             start_line: node.start_position().row,
@@ -238,7 +228,7 @@ fn collect_errors(
 
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
-        collect_errors(child, errors, _line_offset, _col_offset);
+        collect_errors(child, errors);
     }
 }
 

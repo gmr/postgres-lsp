@@ -25,6 +25,17 @@ impl InjectedRegion {
         self.parent_start_byte + local_byte
     }
 
+    /// Compute the (line, column) of this region's start within the parent document.
+    pub fn parent_position(&self, source: &str) -> (usize, usize) {
+        let parent_line = source[..self.parent_start_byte].matches('\n').count();
+        let parent_col = self.parent_start_byte
+            - source[..self.parent_start_byte]
+                .rfind('\n')
+                .map(|p| p + 1)
+                .unwrap_or(0);
+        (parent_line, parent_col)
+    }
+
     /// Convert a parent document byte offset to a local offset within this region.
     /// Returns None if the parent offset is outside this region.
     pub fn to_local_byte(&self, parent_byte: usize) -> Option<usize> {

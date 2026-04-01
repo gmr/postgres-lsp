@@ -360,6 +360,7 @@ impl LanguageServer for Backend {
                     completion::CompletionKind::Type => CompletionItemKind::TYPE_PARAMETER,
                     completion::CompletionKind::Schema => CompletionItemKind::MODULE,
                     completion::CompletionKind::Sequence => CompletionItemKind::CONSTANT,
+                    completion::CompletionKind::Variable => CompletionItemKind::VARIABLE,
                 }),
                 detail: item.detail,
                 documentation: item.documentation.map(|d| {

@@ -509,7 +509,8 @@ fn collect_plpgsql_decls(
     symbols: &mut Vec<Symbol>,
 ) {
     if node.kind() == "decl_statement" {
-        let name = find_child(node, "decl_varname").and_then(|n| leaf_text(n, source));
+        let name_node = find_child(node, "decl_varname");
+        let name = name_node.and_then(|n| leaf_text(n, source));
         let type_text = find_child(node, "decl_datatype")
             .and_then(|n| n.utf8_text(source.as_bytes()).ok())
             .unwrap_or("")
@@ -519,7 +520,7 @@ fn collect_plpgsql_decls(
         let is_cursor = find_child(node, "decl_cursor_query").is_some()
             || type_text.to_uppercase().contains("CURSOR");
 
-        if let Some(var_name) = name {
+        if let (Some(var_name), Some(name_node)) = (name, name_node) {
             let kind = if is_cursor {
                 SymbolKind::Cursor
             } else {
@@ -539,8 +540,6 @@ fn collect_plpgsql_decls(
                 parent_start_col,
             );
 
-            // Name node position
-            let name_node = find_child(node, "decl_varname").unwrap();
             let (name_sl, name_sc) = map_position(
                 name_node.start_position().row,
                 name_node.start_position().column,
