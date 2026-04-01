@@ -5,6 +5,7 @@ use pg_analysis::WorkspaceIndex;
 use pg_analysis::completion::{self, CompletionContext};
 use pg_analysis::hover;
 use pg_analysis::resolve;
+use pg_analysis::signature;
 use pg_analysis::symbols::QualifiedName;
 use pg_format::Style;
 use pg_parse::ParserPool;
@@ -369,6 +370,58 @@ impl LanguageServer for Backend {
             .collect();
 
         Ok(Some(CompletionResponse::Array(lsp_items)))
+    }
+
+    async fn signature_help(&self, params: SignatureHelpParams) -> Result<Option<SignatureHelp>> {
+        let uri = params
+            .text_document_position_params
+            .text_document
+            .uri
+            .to_string();
+        let line = params.text_document_position_params.position.line;
+        let character = params.text_document_position_params.position.character;
+
+        let Some(doc) = self.documents.get(&uri) else {
+            return Ok(None);
+        };
+        let Some(tree) = doc.tree() else {
+            return Ok(None);
+        };
+        let source = doc.text();
+
+        let line_text = source.lines().nth(line as usize).unwrap_or("");
+        let byte_col = utf16_to_byte_offset(line_text, character as usize);
+
+        let Some((sig, active_param)) = signature::signature_help(
+            &self.index,
+            &self.pool,
+            tree,
+            &source,
+            line as usize,
+            byte_col,
+        ) else {
+            return Ok(None);
+        };
+
+        let parameters: Vec<ParameterInformation> = sig
+            .params
+            .iter()
+            .map(|p| ParameterInformation {
+                label: ParameterLabel::Simple(p.label()),
+                documentation: None,
+            })
+            .collect();
+
+        Ok(Some(SignatureHelp {
+            signatures: vec![SignatureInformation {
+                label: sig.label(),
+                documentation: None,
+                parameters: Some(parameters),
+                active_parameter: Some(active_param as u32),
+            }],
+            active_signature: Some(0),
+            active_parameter: Some(active_param as u32),
+        }))
     }
 
     async fn hover(&self, params: HoverParams) -> Result<Option<Hover>> {

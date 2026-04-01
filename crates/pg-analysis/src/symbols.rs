@@ -284,7 +284,7 @@ fn extract_qualified_name_node(node: Node, source: &str) -> Option<QualifiedName
 /// Extract a name from a `func_name` node.
 ///
 /// Tree structure: `func_name` -> `type_function_name` -> (`identifier` | `unreserved_keyword` -> `kw_*`)
-fn extract_func_name(node: Node, source: &str) -> Option<QualifiedName> {
+pub fn extract_func_name(node: Node, source: &str) -> Option<QualifiedName> {
     // func_name may contain qualified names too
     if let Some(indirection) = find_child(node, "indirection") {
         // Schema-qualified function name
@@ -316,7 +316,7 @@ fn extract_leaf_name(node: Node, source: &str) -> Option<QualifiedName> {
 }
 
 /// Get the text content of a node, recursing to find the deepest identifier/keyword text.
-fn leaf_text(node: Node, source: &str) -> Option<String> {
+pub fn leaf_text(node: Node, source: &str) -> Option<String> {
     // If it's a leaf, return its text directly.
     if node.child_count() == 0 {
         let text = node.utf8_text(source.as_bytes()).ok()?;
@@ -350,7 +350,7 @@ fn leaf_text(node: Node, source: &str) -> Option<String> {
 }
 
 /// Find a direct child node of the given kind.
-fn find_child<'a>(node: Node<'a>, kind: &str) -> Option<Node<'a>> {
+pub fn find_child<'a>(node: Node<'a>, kind: &str) -> Option<Node<'a>> {
     let mut cursor = node.walk();
     node.children(&mut cursor).find(|c| c.kind() == kind)
 }
