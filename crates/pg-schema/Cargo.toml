@@ -1,6 +1,6 @@
 [package]
 name = "pg-schema"
-version = "0.1.0"
+version = "1.0.0"
 description = "Live PostgreSQL database introspection via pg_catalog"
 edition.workspace = true
 license.workspace = true
