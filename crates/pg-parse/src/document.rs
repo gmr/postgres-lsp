@@ -50,8 +50,9 @@ impl Document {
         new_text: &str,
         pool: &ParserPool,
     ) {
-        let start_byte = self.position_to_byte(start_line, start_col);
-        let old_end_byte = self.position_to_byte(end_line, end_col);
+        let len = self.rope.len_bytes();
+        let start_byte = self.position_to_byte(start_line, start_col).min(len);
+        let old_end_byte = self.position_to_byte(end_line, end_col).min(len);
 
         // Apply the edit to the rope.
         let start_char = self.rope.byte_to_char(start_byte);
@@ -112,10 +113,23 @@ impl Document {
         &self.rope
     }
 
-    /// Convert a 0-based (line, column) to a byte offset.
-    fn position_to_byte(&self, line: usize, col: usize) -> usize {
+    /// Convert a 0-based (line, utf16_col) to a byte offset.
+    ///
+    /// LSP uses UTF-16 code units for character positions, so we must
+    /// convert from UTF-16 units to byte offsets within the line.
+    fn position_to_byte(&self, line: usize, utf16_col: usize) -> usize {
         let line_start = self.rope.line_to_byte(line);
-        line_start + col
+        let line_text = self.rope.line(line);
+        let mut utf16_count = 0;
+        let mut byte_offset = 0;
+        for ch in line_text.chars() {
+            if utf16_count >= utf16_col {
+                break;
+            }
+            utf16_count += ch.len_utf16();
+            byte_offset += ch.len_utf8();
+        }
+        line_start + byte_offset
     }
 
     /// Collect all ERROR and MISSING nodes from the parse tree as diagnostics.

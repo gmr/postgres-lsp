@@ -83,7 +83,10 @@ pub fn completions(
         CompletionContext::AfterSelect | CompletionContext::ColumnPosition => {
             let all = index.all_symbols();
             for sym in &all {
-                if sym.kind == SymbolKind::Table || sym.kind == SymbolKind::View {
+                if sym.kind == SymbolKind::Table
+                    || sym.kind == SymbolKind::View
+                    || sym.kind == SymbolKind::MaterializedView
+                {
                     for col in &sym.children {
                         items.push(CompletionItem {
                             label: col.name.name.clone(),

@@ -11,15 +11,37 @@ pub struct FormatOptions {
 
 /// Format SQL or PL/pgSQL source code.
 ///
-/// Detects whether the input is PL/pgSQL (starts with DECLARE or BEGIN)
-/// and delegates to the appropriate libpgfmt function.
+/// Detects whether the input is PL/pgSQL by checking if it starts with
+/// `DECLARE` or a `BEGIN` that is not followed by transaction keywords
+/// (`WORK`, `TRANSACTION`, `ISOLATION`), and delegates accordingly.
 pub fn format_sql(source: &str, options: &FormatOptions) -> Result<String, FormatError> {
-    let trimmed = source.trim_start().to_uppercase();
-    if trimmed.starts_with("DECLARE") || trimmed.starts_with("BEGIN") {
+    if is_plpgsql(source) {
         libpgfmt::format_plpgsql(source, options.style).map_err(FormatError::from)
     } else {
         libpgfmt::format(source, options.style).map_err(FormatError::from)
     }
+}
+
+/// Detect whether source text looks like a PL/pgSQL body rather than SQL.
+fn is_plpgsql(source: &str) -> bool {
+    let trimmed = source.trim_start().to_uppercase();
+    if trimmed.starts_with("DECLARE") {
+        return true;
+    }
+    if trimmed.starts_with("BEGIN") {
+        // SQL transaction blocks: BEGIN [WORK|TRANSACTION], BEGIN ISOLATION
+        let rest = trimmed["BEGIN".len()..].trim_start();
+        if rest.is_empty()
+            || rest.starts_with(';')
+            || rest.starts_with("WORK")
+            || rest.starts_with("TRANSACTION")
+            || rest.starts_with("ISOLATION")
+        {
+            return false;
+        }
+        return true;
+    }
+    false
 }
 
 #[derive(Debug, thiserror::Error)]

@@ -141,15 +141,10 @@ fn collect_definitions(node: Node, source: &str, uri: &str, symbols: &mut Vec<Sy
 fn try_extract_definition(node: Node, source: &str, uri: &str) -> Option<Symbol> {
     // Each arm returns (kind, name, name_node) where name_node has the position of the name.
     let result: Option<(SymbolKind, QualifiedName, Node)> = match node.kind() {
-        "CreateStmt" => {
-            let kind = if has_child_kind(node, "kw_materialized") {
-                SymbolKind::MaterializedView
-            } else {
-                SymbolKind::Table
-            };
-            find_descendant(node, "qualified_name")
-                .and_then(|n| extract_qualified_name_node(n, source).map(|qn| (kind, qn, n)))
-        }
+        "CreateStmt" => find_descendant(node, "qualified_name")
+            .and_then(|n| extract_qualified_name_node(n, source).map(|qn| (SymbolKind::Table, qn, n))),
+        "CreateMatViewStmt" => find_descendant(node, "qualified_name")
+            .and_then(|n| extract_qualified_name_node(n, source).map(|qn| (SymbolKind::MaterializedView, qn, n))),
         "ViewStmt" => find_descendant(node, "qualified_name")
             .and_then(|n| extract_qualified_name_node(n, source).map(|qn| (SymbolKind::View, qn, n))),
         "CreateFunctionStmt" => {
@@ -426,18 +421,14 @@ fn collect_references(node: Node, source: &str, uri: &str, refs: &mut Vec<Symbol
                         .and_then(|n| extract_func_name(n, source))
                 }
                 _ => {
-                    // For columnref/relation_expr, get the full text as a qualified name
-                    let text = node.utf8_text(source.as_bytes()).unwrap_or("").trim().replace('"', "");
-                    if text.is_empty() {
-                        None
-                    } else if let Some((schema, name)) = text.split_once('.') {
-                        Some(QualifiedName::with_schema(
-                            schema.to_string(),
-                            name.to_string(),
-                        ))
-                    } else {
-                        Some(QualifiedName::new(text))
-                    }
+                    // For columnref/relation_expr, extract qualified name from
+                    // descendant nodes rather than using the full node text,
+                    // which may include aliases or trailing operators.
+                    extract_qualified_name_node(node, source)
+                        .or_else(|| {
+                            find_descendant(node, "ColId")
+                                .and_then(|n| extract_leaf_name(n, source))
+                        })
                 }
             };
 

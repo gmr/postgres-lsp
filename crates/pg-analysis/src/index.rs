@@ -28,13 +28,18 @@ impl WorkspaceIndex {
     }
 
     /// Re-index a file: remove old entries and extract new ones from the tree.
+    ///
+    /// Prepares all new entries before modifying shared maps to minimize the
+    /// window where concurrent queries may observe missing symbols.
     pub fn update_file(&self, uri: &str, tree: &Tree, source: &str) {
-        self.remove_file(uri);
-
         let symbols = symbols::extract_symbols(tree, source, uri);
         let refs = symbols::extract_references(tree, source, uri);
 
         let symbol_arcs: Vec<Arc<Symbol>> = symbols.into_iter().map(Arc::new).collect();
+        let ref_arcs: Vec<Arc<SymbolRef>> = refs.into_iter().map(Arc::new).collect();
+
+        // Remove old entries, then insert new ones.
+        self.remove_file(uri);
 
         // Index by name
         for sym in &symbol_arcs {
@@ -53,10 +58,7 @@ impl WorkspaceIndex {
         }
 
         self.definitions.insert(uri.to_string(), symbol_arcs);
-        self.references.insert(
-            uri.to_string(),
-            refs.into_iter().map(Arc::new).collect(),
-        );
+        self.references.insert(uri.to_string(), ref_arcs);
     }
 
     /// Remove all entries for a file.

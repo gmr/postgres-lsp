@@ -30,18 +30,37 @@ const TOKEN_MODIFIERS: &[SemanticTokenModifier] = &[
 /// Walk the tree and produce semantic tokens based on node kinds.
 ///
 /// This uses the node kinds from the tree-sitter-postgres grammar directly,
-/// mapping them to LSP semantic token types.
-pub fn collect_semantic_tokens(root: Node) -> Vec<SemanticToken> {
+/// mapping them to LSP semantic token types. Positions and lengths are
+/// converted to UTF-16 code units as required by LSP.
+pub fn collect_semantic_tokens(root: Node, source: &str) -> Vec<SemanticToken> {
     let mut tokens = Vec::new();
     let mut prev_line = 0u32;
     let mut prev_start = 0u32;
 
-    collect_tokens_recursive(root, &mut tokens, &mut prev_line, &mut prev_start);
+    // Pre-split source into lines for efficient UTF-16 offset computation.
+    let lines: Vec<&str> = source.lines().collect();
+
+    collect_tokens_recursive(root, source, &lines, &mut tokens, &mut prev_line, &mut prev_start);
     tokens
+}
+
+/// Compute the UTF-16 column offset for a byte column within a line.
+fn byte_col_to_utf16(line: &str, byte_col: usize) -> u32 {
+    let end = byte_col.min(line.len());
+    line[..end].encode_utf16().count() as u32
+}
+
+/// Compute the UTF-16 length of a byte range within the source text.
+fn byte_len_to_utf16(source: &str, start_byte: usize, end_byte: usize) -> u32 {
+    let end = end_byte.min(source.len());
+    let start = start_byte.min(end);
+    source[start..end].encode_utf16().count() as u32
 }
 
 fn collect_tokens_recursive(
     node: Node,
+    source: &str,
+    lines: &[&str],
     tokens: &mut Vec<SemanticToken>,
     prev_line: &mut u32,
     prev_start: &mut u32,
@@ -51,8 +70,13 @@ fn collect_tokens_recursive(
     // Determine the token type for this node.
     if let Some(token_type) = classify_node(kind) {
         let start_line = node.start_position().row as u32;
-        let start_char = node.start_position().column as u32;
-        let length = (node.end_byte() - node.start_byte()) as u32;
+        let byte_col = node.start_position().column;
+        let start_char = if (start_line as usize) < lines.len() {
+            byte_col_to_utf16(lines[start_line as usize], byte_col)
+        } else {
+            byte_col as u32
+        };
+        let length = byte_len_to_utf16(source, node.start_byte(), node.end_byte());
 
         if length > 0 {
             let delta_line = start_line - *prev_line;
@@ -81,7 +105,7 @@ fn collect_tokens_recursive(
     // Recurse into children.
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
-        collect_tokens_recursive(child, tokens, prev_line, prev_start);
+        collect_tokens_recursive(child, source, lines, tokens, prev_line, prev_start);
     }
 }
 

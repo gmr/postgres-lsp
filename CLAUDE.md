@@ -33,7 +33,7 @@ This is a Cargo workspace with five crates:
 - **pg-parse** — Document model with tree-sitter incremental parsing, parser pool, and PL/pgSQL injection handling. Core types: `Document`, `ParserPool`.
 - **pg-analysis** — Symbol extraction from parse trees, `DashMap`-backed workspace index, name resolution, completion, and hover logic. Core types: `Symbol`, `SymbolKind`, `QualifiedName`, `WorkspaceIndex`.
 - **pg-schema** — Optional live database introspection via `tokio-postgres` against `pg_catalog` (Phase 7).
-- **pg-format** — SQL formatting powered by [libpgfmt](../libpgfmt). Supports 7 styles (River, Mozilla, Aweber, Dbt, Gitlab, Kickstarter, Mattmc3). Public API: `format_sql(source, options)` and `FormatOptions { style }`.
+- **pg-format** — SQL formatting powered by [libpgfmt](https://crates.io/crates/libpgfmt). Supports 7 styles (River, Mozilla, Aweber, Dbt, Gitlab, Kickstarter, Mattmc3). Public API: `format_sql(source, options)` and `FormatOptions { style }`.
 - **pg-lsp** — Binary crate implementing the LSP via `tower-lsp`. Handles document sync, diagnostics, semantic tokens, go-to-definition, find references, completion, hover, document/workspace symbols, folding ranges, and rename.
 
 ### Key Design Constraints
@@ -46,8 +46,8 @@ This is a Cargo workspace with five crates:
 
 ### Dependencies
 
-- `tree-sitter-postgres` is a **path dependency** at `../tree-sitter-postgres`.
-- `libpgfmt` from crates.io (SQL/PL-pgSQL formatter). A `[patch.crates-io]` entry ensures libpgfmt uses the local tree-sitter-postgres.
+- `tree-sitter-postgres` from crates.io (PostgreSQL grammar for tree-sitter).
+- `libpgfmt` from crates.io (SQL/PL-pgSQL formatter).
 
 ## Testing
 

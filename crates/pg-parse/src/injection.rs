@@ -61,6 +61,7 @@ fn find_dollar_quoted_bodies(
     // Look for dollar_quoted_string nodes inside function/procedure definitions
     // that have LANGUAGE plpgsql.
     if node.kind() == "dollar_quoted_string"
+        && is_inside_plpgsql_function(node, source)
         && let Some(body) = extract_dollar_quote_content(node, source) {
             let mut guard = pool.acquire(Language::PlPgSql);
             if let Some(tree) = guard.parser_mut().parse(&body.text, None) {
@@ -79,6 +80,50 @@ fn find_dollar_quoted_bodies(
     }
 }
 
+/// Check if a node is inside a CREATE FUNCTION/PROCEDURE with LANGUAGE plpgsql.
+fn is_inside_plpgsql_function(node: Node, source: &str) -> bool {
+    let mut current = node.parent();
+    while let Some(parent) = current {
+        if parent.kind() == "CreateFunctionStmt" {
+            // Look for a LANGUAGE clause that specifies plpgsql
+            let mut cursor = parent.walk();
+            for child in parent.children(&mut cursor) {
+                if child.kind() == "func_body_item" || child.kind() == "createfunc_opt_item" {
+                    let text = child
+                        .utf8_text(source.as_bytes())
+                        .unwrap_or("")
+                        .to_uppercase();
+                    if text.contains("LANGUAGE") && text.contains("PLPGSQL") {
+                        return true;
+                    }
+                }
+                // Also check direct keyword sequences
+                if child.kind() == "kw_language" {
+                    // The next sibling should be the language name
+                    if let Some(next) = child.next_sibling() {
+                        let lang = next
+                            .utf8_text(source.as_bytes())
+                            .unwrap_or("")
+                            .to_uppercase();
+                        if lang.trim() == "PLPGSQL" {
+                            return true;
+                        }
+                    }
+                }
+            }
+            // Check the full statement text as a fallback
+            let stmt_text = parent
+                .utf8_text(source.as_bytes())
+                .unwrap_or("")
+                .to_uppercase();
+            return stmt_text.contains("LANGUAGE PLPGSQL")
+                || stmt_text.contains("LANGUAGE 'PLPGSQL'");
+        }
+        current = parent.parent();
+    }
+    false
+}
+
 struct DollarQuoteContent {
     start_byte: usize,
     text: String,
@@ -86,6 +131,10 @@ struct DollarQuoteContent {
 
 /// Extract the content between dollar-quote delimiters.
 /// E.g., `$$BEGIN ... END;$$` -> `BEGIN ... END;`
+///
+/// Note: `rfind` is safe here because tree-sitter already parsed the outer
+/// `dollar_quoted_string` node boundary. Any nested dollar-quotes with
+/// different tags (e.g., `$inner$...$inner$`) will be part of the content.
 fn extract_dollar_quote_content(node: Node, source: &str) -> Option<DollarQuoteContent> {
     let full = node.utf8_text(source.as_bytes()).ok()?;
 
@@ -94,7 +143,7 @@ fn extract_dollar_quote_content(node: Node, source: &str) -> Option<DollarQuoteC
     let delim_end = full[first_dollar + 1..].find('$')? + first_dollar + 2;
     let delimiter = &full[first_dollar..delim_end];
 
-    // Find the closing delimiter
+    // Find the closing delimiter (last occurrence, which is the outer close)
     let content_start = delim_end;
     let content_end = full.rfind(delimiter)?;
     if content_end <= content_start {

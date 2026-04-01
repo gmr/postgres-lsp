@@ -102,7 +102,9 @@ impl Backend {
         }
 
         let line_text = source.lines().nth(line as usize).unwrap_or("");
-        let before_cursor = &line_text[..std::cmp::min(character as usize, line_text.len())];
+        // Convert LSP UTF-16 character offset to a byte offset within the line.
+        let byte_offset = utf16_to_byte_offset(line_text, character as usize);
+        let before_cursor = &line_text[..byte_offset];
         let trimmed = before_cursor.trim_end().to_uppercase();
 
         if trimmed.ends_with("FROM") || trimmed.ends_with("JOIN") {
@@ -113,6 +115,20 @@ impl Backend {
             CompletionContext::General
         }
     }
+}
+
+/// Convert an LSP UTF-16 character offset to a byte offset within a line.
+fn utf16_to_byte_offset(line: &str, utf16_col: usize) -> usize {
+    let mut utf16_count = 0;
+    let mut byte_offset = 0;
+    for ch in line.chars() {
+        if utf16_count >= utf16_col {
+            break;
+        }
+        utf16_count += ch.len_utf16();
+        byte_offset += ch.len_utf8();
+    }
+    byte_offset.min(line.len())
 }
 
 fn node_range(node: tree_sitter::Node) -> Range {
@@ -463,7 +479,8 @@ impl LanguageServer for Backend {
             return Ok(None);
         };
 
-        let tokens = semantic_tokens::collect_semantic_tokens(tree.root_node());
+        let source = doc.text();
+        let tokens = semantic_tokens::collect_semantic_tokens(tree.root_node(), &source);
 
         Ok(Some(SemanticTokensResult::Tokens(SemanticTokens {
             result_id: None,
@@ -562,8 +579,13 @@ impl LanguageServer for Backend {
                 if formatted == source {
                     return Ok(None);
                 }
-                let line_count = source.lines().count() as u32;
-                let last_line_len = source.lines().last().map(|l| l.len()).unwrap_or(0) as u32;
+                let line_count = source.lines().count();
+                let (end_line, end_char) = if line_count == 0 {
+                    (0, 0)
+                } else {
+                    let last_line_len = source.lines().last().map(|l| l.len()).unwrap_or(0);
+                    ((line_count - 1) as u32, last_line_len as u32)
+                };
                 Ok(Some(vec![TextEdit {
                     range: Range {
                         start: Position {
@@ -571,8 +593,8 @@ impl LanguageServer for Backend {
                             character: 0,
                         },
                         end: Position {
-                            line: line_count,
-                            character: last_line_len,
+                            line: end_line,
+                            character: end_char,
                         },
                     },
                     new_text: formatted,
