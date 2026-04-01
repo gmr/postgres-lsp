@@ -1,0 +1,76 @@
+name: Publish to crates.io
+
+on:
+  release:
+    types: [created]
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    environment:
+      name: crates-io
+      url: https://crates.io/crates/pg-lsp
+
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry and build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-release-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-release-
+
+      - name: Run tests
+        run: cargo test --workspace
+
+      - name: Verify version matches tag
+        run: |
+          TAG="${GITHUB_REF#refs/tags/v}"
+          CARGO_VERSION=$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)"/\1/')
+          if [ "$TAG" != "$CARGO_VERSION" ]; then
+            echo "Tag v$TAG does not match Cargo.toml version $CARGO_VERSION"
+            exit 1
+          fi
+
+      - name: Get crates.io token via trusted publishing
+        uses: rust-lang/crates-io-auth-action@v1
+        id: auth
+
+      - name: Publish pg-parse
+        run: cargo publish -p pg-parse
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+
+      - name: Publish pg-format
+        run: cargo publish -p pg-format
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+
+      - name: Publish pg-analysis
+        run: cargo publish -p pg-analysis
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+
+      - name: Publish pg-schema
+        run: cargo publish -p pg-schema
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+
+      - name: Publish pg-lsp
+        run: cargo publish -p pg-lsp
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
