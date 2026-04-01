@@ -50,6 +50,35 @@ jobs:
         uses: rust-lang/crates-io-auth-action@v1
         id: auth
 
+      - name: Publish postgres-lsp-parse
+        run: cargo publish -p postgres-lsp-parse
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+
+      - name: Publish postgres-lsp-format
+        run: cargo publish -p postgres-lsp-format
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+
+      - name: Wait for crates.io to index parse and format
+        run: sleep 30
+
+      - name: Publish postgres-lsp-analysis
+        run: cargo publish -p postgres-lsp-analysis
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+
+      - name: Wait for crates.io to index analysis
+        run: sleep 30
+
+      - name: Publish postgres-lsp-schema
+        run: cargo publish -p postgres-lsp-schema
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+
+      - name: Wait for crates.io to index schema
+        run: sleep 30
+
       - name: Publish postgres-lsp
         run: cargo publish -p postgres-lsp
         env:

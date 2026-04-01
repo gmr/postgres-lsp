@@ -4,6 +4,7 @@ version.workspace = true
 description = "Language Server Protocol implementation for PostgreSQL and PL/pgSQL"
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
 
 [[bin]]
 name = "postgres-lsp"

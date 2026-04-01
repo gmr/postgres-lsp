@@ -4,6 +4,7 @@ version.workspace = true
 description = "PostgreSQL/PL-pgSQL document model with incremental tree-sitter parsing"
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
 
 [dependencies]
 tree-sitter.workspace = true

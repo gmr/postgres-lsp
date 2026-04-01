@@ -4,6 +4,7 @@ version.workspace = true
 description = "Symbol extraction, workspace index, and name resolution for PostgreSQL"
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
 
 [dependencies]
 postgres-lsp-parse.workspace = true
