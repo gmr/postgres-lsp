@@ -1,8 +1,13 @@
+use std::collections::HashMap;
+
 use pg_analysis::symbols::{QualifiedName, Symbol, SymbolKind};
 use tokio_postgres::Client;
 
 /// The synthetic URI used for database-sourced symbols.
 pub const DB_URI: &str = "pg-catalog://database";
+
+/// Namespace exclusion filter — skip system and information_schema namespaces.
+const NS_FILTER: &str = "n.nspname NOT LIKE 'pg_%' AND n.nspname != 'information_schema'";
 
 /// Load all schemas, tables, columns, functions, types, and sequences
 /// from a live PostgreSQL database via `pg_catalog` queries.
@@ -19,13 +24,8 @@ pub async fn load_catalog(client: &Client) -> Result<Vec<Symbol>, CatalogError> 
 }
 
 async fn load_schemas(client: &Client, symbols: &mut Vec<Symbol>) -> Result<(), CatalogError> {
-    let rows = client
-        .query(
-            "SELECT nspname FROM pg_catalog.pg_namespace \
-             WHERE nspname NOT LIKE 'pg_%' AND nspname != 'information_schema'",
-            &[],
-        )
-        .await?;
+    let query = format!("SELECT nspname FROM pg_catalog.pg_namespace n WHERE {NS_FILTER}");
+    let rows = client.query(&query, &[]).await?;
 
     for row in rows {
         let name: String = row.get(0);
@@ -39,22 +39,30 @@ async fn load_tables_and_columns(
     client: &Client,
     symbols: &mut Vec<Symbol>,
 ) -> Result<(), CatalogError> {
-    let rows = client
-        .query(
-            "SELECT n.nspname, c.relname, c.relkind \
-             FROM pg_catalog.pg_class c \
-             JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace \
-             WHERE c.relkind IN ('r', 'v', 'm', 'f') \
-               AND n.nspname NOT LIKE 'pg_%' \
-               AND n.nspname != 'information_schema'",
-            &[],
-        )
-        .await?;
+    // Single batch query for tables/views and their columns (avoids N+1).
+    let query = format!(
+        "SELECT n.nspname, c.relname, c.relkind, \
+                a.attname, format_type(a.atttypid, a.atttypmod) \
+         FROM pg_catalog.pg_class c \
+         JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace \
+         LEFT JOIN pg_catalog.pg_attribute a \
+           ON a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped \
+         WHERE c.relkind IN ('r', 'v', 'm', 'f') AND {NS_FILTER} \
+         ORDER BY n.nspname, c.relname, a.attnum"
+    );
+    let rows = client.query(&query, &[]).await?;
 
-    for row in rows {
+    // Group columns by (schema, table).
+    let mut tables: Vec<(String, String, SymbolKind)> = Vec::new();
+    let mut columns: HashMap<(String, String), Vec<Symbol>> = HashMap::new();
+
+    for row in &rows {
         let schema: String = row.get(0);
         let name: String = row.get(1);
+        // PostgreSQL "char" type maps to i8 in tokio_postgres; all relkind values are ASCII.
         let relkind: i8 = row.get(2);
+        let col_name: Option<String> = row.get(3);
+        let col_type: Option<String> = row.get(4);
 
         let kind = match relkind as u8 as char {
             'r' => SymbolKind::Table,
@@ -64,34 +72,27 @@ async fn load_tables_and_columns(
             _ => continue,
         };
 
+        let key = (schema.clone(), name.clone());
+        if !columns.contains_key(&key) {
+            tables.push((schema.clone(), name.clone(), kind));
+            columns.insert(key.clone(), Vec::new());
+        }
+
+        if let (Some(cn), Some(ct)) = (col_name, col_type) {
+            let col_def = format!("{cn} {ct}");
+            columns.get_mut(&key).unwrap().push(make_symbol(
+                SymbolKind::Column,
+                None,
+                &cn,
+                &col_def,
+            ));
+        }
+    }
+
+    for (schema, name, kind) in tables {
         let def_text = format!("{kind_label} {schema}.{name}", kind_label = kind.label());
-
-        // Load columns for this table/view.
-        let col_rows = client
-            .query(
-                "SELECT a.attname, format_type(a.atttypid, a.atttypmod) \
-                 FROM pg_catalog.pg_attribute a \
-                 JOIN pg_catalog.pg_class c ON c.oid = a.attrelid \
-                 JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace \
-                 WHERE n.nspname = $1 AND c.relname = $2 \
-                   AND a.attnum > 0 AND NOT a.attisdropped \
-                 ORDER BY a.attnum",
-                &[&schema, &name],
-            )
-            .await?;
-
-        let children: Vec<Symbol> = col_rows
-            .iter()
-            .map(|cr| {
-                let col_name: String = cr.get(0);
-                let col_type: String = cr.get(1);
-                let col_def = format!("{col_name} {col_type}");
-                make_symbol(SymbolKind::Column, None, &col_name, &col_def)
-            })
-            .collect();
-
         let mut sym = make_symbol(kind, Some(&schema), &name, &def_text);
-        sym.children = children;
+        sym.children = columns.remove(&(schema, name)).unwrap_or_default();
         symbols.push(sym);
     }
 
@@ -99,19 +100,16 @@ async fn load_tables_and_columns(
 }
 
 async fn load_functions(client: &Client, symbols: &mut Vec<Symbol>) -> Result<(), CatalogError> {
-    let rows = client
-        .query(
-            "SELECT n.nspname, p.proname, \
-                    pg_catalog.pg_get_function_arguments(p.oid), \
-                    pg_catalog.pg_get_function_result(p.oid), \
-                    p.prokind \
-             FROM pg_catalog.pg_proc p \
-             JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace \
-             WHERE n.nspname NOT LIKE 'pg_%' \
-               AND n.nspname != 'information_schema'",
-            &[],
-        )
-        .await?;
+    let query = format!(
+        "SELECT n.nspname, p.proname, \
+                pg_catalog.pg_get_function_arguments(p.oid), \
+                pg_catalog.pg_get_function_result(p.oid), \
+                p.prokind \
+         FROM pg_catalog.pg_proc p \
+         JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace \
+         WHERE {NS_FILTER}"
+    );
+    let rows = client.query(&query, &[]).await?;
 
     for row in rows {
         let schema: String = row.get(0);
@@ -136,18 +134,15 @@ async fn load_functions(client: &Client, symbols: &mut Vec<Symbol>) -> Result<()
 }
 
 async fn load_types(client: &Client, symbols: &mut Vec<Symbol>) -> Result<(), CatalogError> {
-    let rows = client
-        .query(
-            "SELECT n.nspname, t.typname, t.typtype \
-             FROM pg_catalog.pg_type t \
-             JOIN pg_catalog.pg_namespace n ON n.oid = t.typnamespace \
-             WHERE n.nspname NOT LIKE 'pg_%' \
-               AND n.nspname != 'information_schema' \
-               AND t.typtype IN ('c', 'e', 'r', 'd') \
-               AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_class c WHERE c.reltype = t.oid)",
-            &[],
-        )
-        .await?;
+    let query = format!(
+        "SELECT n.nspname, t.typname, t.typtype \
+         FROM pg_catalog.pg_type t \
+         JOIN pg_catalog.pg_namespace n ON n.oid = t.typnamespace \
+         WHERE {NS_FILTER} \
+           AND t.typtype IN ('c', 'e', 'r', 'd') \
+           AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_class c WHERE c.reltype = t.oid)"
+    );
+    let rows = client.query(&query, &[]).await?;
 
     for row in rows {
         let schema: String = row.get(0);
@@ -167,17 +162,13 @@ async fn load_types(client: &Client, symbols: &mut Vec<Symbol>) -> Result<(), Ca
 }
 
 async fn load_sequences(client: &Client, symbols: &mut Vec<Symbol>) -> Result<(), CatalogError> {
-    let rows = client
-        .query(
-            "SELECT n.nspname, c.relname \
-             FROM pg_catalog.pg_class c \
-             JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace \
-             WHERE c.relkind = 'S' \
-               AND n.nspname NOT LIKE 'pg_%' \
-               AND n.nspname != 'information_schema'",
-            &[],
-        )
-        .await?;
+    let query = format!(
+        "SELECT n.nspname, c.relname \
+         FROM pg_catalog.pg_class c \
+         JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace \
+         WHERE c.relkind = 'S' AND {NS_FILTER}"
+    );
+    let rows = client.query(&query, &[]).await?;
 
     for row in rows {
         let schema: String = row.get(0);
@@ -194,8 +185,6 @@ async fn load_sequences(client: &Client, symbols: &mut Vec<Symbol>) -> Result<()
     Ok(())
 }
 
-/// Build a Symbol from database catalog data.
-/// Database symbols have no file positions (all zeros).
 fn make_symbol(
     kind: SymbolKind,
     schema: Option<&str>,

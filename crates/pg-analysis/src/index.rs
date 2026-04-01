@@ -55,18 +55,7 @@ impl WorkspaceIndex {
 
         // Remove old entries, then insert new ones.
         self.remove_file(uri);
-
-        for sym in &symbol_arcs {
-            let key = (sym.kind, sym.name.name.to_lowercase());
-            self.by_name.entry(key).or_default().push(Arc::clone(sym));
-
-            for child in &sym.children {
-                let child_arc = Arc::new(child.clone());
-                let child_key = (child.kind, child.name.name.to_lowercase());
-                self.by_name.entry(child_key).or_default().push(child_arc);
-            }
-        }
-
+        self.index_by_name(&symbol_arcs);
         self.definitions.insert(uri.to_string(), symbol_arcs);
         self.references.insert(uri.to_string(), ref_arcs);
     }
@@ -75,10 +64,13 @@ impl WorkspaceIndex {
     /// Uses the provided URI to group them, allowing removal via `remove_file`.
     pub fn load_symbols(&self, uri: &str, symbols: Vec<Symbol>) {
         self.remove_file(uri);
-
         let symbol_arcs: Vec<Arc<Symbol>> = symbols.into_iter().map(Arc::new).collect();
+        self.index_by_name(&symbol_arcs);
+        self.definitions.insert(uri.to_string(), symbol_arcs);
+    }
 
-        for sym in &symbol_arcs {
+    fn index_by_name(&self, symbols: &[Arc<Symbol>]) {
+        for sym in symbols {
             let key = (sym.kind, sym.name.name.to_lowercase());
             self.by_name.entry(key).or_default().push(Arc::clone(sym));
 
@@ -88,8 +80,6 @@ impl WorkspaceIndex {
                 self.by_name.entry(child_key).or_default().push(child_arc);
             }
         }
-
-        self.definitions.insert(uri.to_string(), symbol_arcs);
     }
 
     /// Remove all entries for a file.

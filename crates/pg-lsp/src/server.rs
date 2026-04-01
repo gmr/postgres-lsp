@@ -278,16 +278,16 @@ impl LanguageServer for Backend {
     async fn initialized(&self, _params: InitializedParams) {
         info!("pg-lsp initialized");
 
+        // Load database schema in the background so it doesn't block other LSP requests.
         if let Some(ref db_url) = self.database_url {
-            info!("loading schema from database");
-            match pg_schema::load_database_schema(db_url, &self.index).await {
-                Ok(count) => {
-                    info!("loaded {count} symbols from database");
+            let index = Arc::clone(&self.index);
+            let url = db_url.clone();
+            tokio::spawn(async move {
+                match pg_schema::load_database_schema(&url, &index).await {
+                    Ok(count) => info!("loaded {count} symbols from database"),
+                    Err(e) => tracing::warn!("failed to load database schema: {e}"),
                 }
-                Err(e) => {
-                    tracing::warn!("failed to load database schema: {e}");
-                }
-            }
+            });
         }
     }
 
