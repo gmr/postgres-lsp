@@ -389,19 +389,17 @@ impl LanguageServer for Backend {
         };
         let source = doc.text();
 
-        // Convert LSP UTF-16 position to byte offset.
         let line_text = source.lines().nth(line as usize).unwrap_or("");
         let byte_col = utf16_to_byte_offset(line_text, character as usize);
-        let line_start_byte = source
-            .lines()
-            .take(line as usize)
-            .map(|l| l.len() + 1)
-            .sum::<usize>();
-        let byte_offset = line_start_byte + byte_col;
 
-        let Some((sig, active_param)) =
-            signature::signature_help(&self.index, tree, &source, byte_offset)
-        else {
+        let Some((sig, active_param)) = signature::signature_help(
+            &self.index,
+            &self.pool,
+            tree,
+            &source,
+            line as usize,
+            byte_col,
+        ) else {
             return Ok(None);
         };
 

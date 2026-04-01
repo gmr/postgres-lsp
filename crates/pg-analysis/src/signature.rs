@@ -2,7 +2,7 @@ use tree_sitter::Node;
 
 use crate::index::WorkspaceIndex;
 use crate::resolve;
-use crate::symbols::{QualifiedName, Symbol, SymbolKind};
+use crate::symbols::{self, QualifiedName, Symbol, SymbolKind};
 
 /// A parameter extracted from a function definition.
 #[derive(Debug, Clone)]
@@ -45,18 +45,15 @@ impl SignatureInfo {
 
 /// Extract parameter information from a function definition's source text
 /// by re-parsing its definition tree.
-pub fn extract_signature(symbol: &Symbol) -> Option<SignatureInfo> {
+pub fn extract_signature(symbol: &Symbol, pool: &pg_parse::ParserPool) -> Option<SignatureInfo> {
     if symbol.kind != SymbolKind::Function && symbol.kind != SymbolKind::Procedure {
         return None;
     }
 
-    let mut parser = tree_sitter::Parser::new();
-    let lang: tree_sitter::Language = tree_sitter_postgres::LANGUAGE.into();
-    parser.set_language(&lang).ok()?;
-    let tree = parser.parse(&symbol.definition_text, None)?;
+    let mut guard = pool.acquire(pg_parse::parser::Language::Postgres);
+    let tree = guard.parser_mut().parse(&symbol.definition_text, None)?;
     let root = tree.root_node();
 
-    // Find the CreateFunctionStmt inside the parse tree.
     let func_stmt = find_node_by_kind(root, "CreateFunctionStmt")?;
 
     let params = extract_params(func_stmt, &symbol.definition_text);
@@ -71,23 +68,32 @@ pub fn extract_signature(symbol: &Symbol) -> Option<SignatureInfo> {
 
 /// Find the enclosing func_application node and determine the active parameter index.
 ///
-/// `byte_offset` is the cursor position in byte offset within the source.
+/// Uses a tree-sitter Point (row, byte_column) for cursor position.
 /// Returns `(func_name, active_param_index)`.
 pub fn find_active_function_call(
     tree: &tree_sitter::Tree,
     source: &str,
-    byte_offset: usize,
+    row: usize,
+    byte_col: usize,
 ) -> Option<(String, usize)> {
-    let root = tree.root_node();
-    let node = root.descendant_for_byte_range(byte_offset, byte_offset)?;
+    let point = tree_sitter::Point {
+        row,
+        column: byte_col,
+    };
+    let node = tree.root_node().descendant_for_point_range(point, point)?;
 
     // Walk up to find the nearest func_application.
     let mut current = Some(node);
     while let Some(n) = current {
         if n.kind() == "func_application" {
-            let func_name = extract_func_name_text(n, source)?;
+            let name_node = symbols::find_child(n, "func_name")?;
+            let qname = symbols::extract_func_name(name_node, source)?;
+            let byte_offset = tree
+                .root_node()
+                .descendant_for_point_range(point, point)?
+                .start_byte();
             let param_index = count_commas_before(n, byte_offset);
-            return Some((func_name, param_index));
+            return Some((qname.display(), param_index));
         }
         current = n.parent();
     }
@@ -97,52 +103,48 @@ pub fn find_active_function_call(
 /// Look up signature help for a function call at the given position.
 pub fn signature_help(
     index: &WorkspaceIndex,
+    pool: &pg_parse::ParserPool,
     tree: &tree_sitter::Tree,
     source: &str,
-    byte_offset: usize,
+    row: usize,
+    byte_col: usize,
 ) -> Option<(SignatureInfo, usize)> {
-    let (func_name, active_param) = find_active_function_call(tree, source, byte_offset)?;
+    let (func_name, active_param) = find_active_function_call(tree, source, row, byte_col)?;
     let name = QualifiedName::new(func_name);
-    let symbols = resolve::resolve_name(index, &name);
+    let defs = resolve::resolve_name(index, &name);
 
-    let func_sym = symbols
+    let func_sym = defs
         .iter()
         .find(|s| s.kind == SymbolKind::Function || s.kind == SymbolKind::Procedure)?;
 
-    let sig = extract_signature(func_sym)?;
+    let sig = extract_signature(func_sym, pool)?;
     Some((sig, active_param))
 }
 
-fn extract_func_name_text(func_app: Node, source: &str) -> Option<String> {
+/// Count commas before the byte offset within a func_application's argument list.
+/// Iterates only the direct children of func_arg_list — no deep recursion needed.
+fn count_commas_before(func_app: Node, byte_offset: usize) -> usize {
+    // func_arg_list is a left-recursive list; commas are direct children.
+    fn count_in_list(node: Node, byte_offset: usize) -> usize {
+        let mut count = 0;
+        let mut cursor = node.walk();
+        for child in node.children(&mut cursor) {
+            if child.kind() == "," && child.start_byte() < byte_offset {
+                count += 1;
+            } else if child.kind() == "func_arg_list" {
+                count += count_in_list(child, byte_offset);
+            }
+        }
+        count
+    }
+
     let mut cursor = func_app.walk();
     for child in func_app.children(&mut cursor) {
-        if child.kind() == "func_name" {
-            return leaf_text(child, source);
+        if child.kind() == "func_arg_list" {
+            return count_in_list(child, byte_offset);
         }
     }
-    None
-}
-
-/// Count commas before the byte offset within a func_application's argument list.
-fn count_commas_before(func_app: Node, byte_offset: usize) -> usize {
-    let mut count = 0;
-    count_commas_recursive(func_app, byte_offset, &mut count);
-    count
-}
-
-fn count_commas_recursive(node: Node, byte_offset: usize, count: &mut usize) {
-    if node.kind() == ","
-        && node.start_byte() < byte_offset
-        && node.parent().is_some_and(|p| p.kind() == "func_arg_list")
-    {
-        *count += 1;
-    }
-    let mut cursor = node.walk();
-    for child in node.children(&mut cursor) {
-        if child.start_byte() <= byte_offset {
-            count_commas_recursive(child, byte_offset, count);
-        }
-    }
+    0
 }
 
 /// Extract parameters from a CreateFunctionStmt node.
@@ -154,9 +156,11 @@ fn extract_params(func_stmt: Node, source: &str) -> Vec<ParamInfo> {
 
 fn collect_params(node: Node, source: &str, params: &mut Vec<ParamInfo>) {
     if node.kind() == "func_arg" {
-        let param_name = find_child_text(node, "param_name", source);
-        let type_name =
-            find_child_text(node, "func_type", source).unwrap_or_else(|| "unknown".to_string());
+        let param_name =
+            symbols::find_child(node, "param_name").and_then(|n| symbols::leaf_text(n, source));
+        let type_name = symbols::find_child(node, "func_type")
+            .and_then(|n| symbols::leaf_text(n, source))
+            .unwrap_or_else(|| "unknown".to_string());
         params.push(ParamInfo {
             name: param_name,
             type_name,
@@ -173,8 +177,8 @@ fn collect_params(node: Node, source: &str, params: &mut Vec<ParamInfo>) {
 /// Extract the return type from a CreateFunctionStmt.
 fn extract_return_type(func_stmt: Node, source: &str) -> Option<String> {
     let func_return = find_node_by_kind(func_stmt, "func_return")?;
-    let text = func_return.utf8_text(source.as_bytes()).ok()?;
-    Some(text.trim().to_string())
+    // func_return contains func_type -> Typename; extract the leaf text.
+    symbols::leaf_text(func_return, source)
 }
 
 fn find_node_by_kind<'a>(node: Node<'a>, kind: &str) -> Option<Node<'a>> {
@@ -185,38 +189,6 @@ fn find_node_by_kind<'a>(node: Node<'a>, kind: &str) -> Option<Node<'a>> {
     for child in node.children(&mut cursor) {
         if let Some(found) = find_node_by_kind(child, kind) {
             return Some(found);
-        }
-    }
-    None
-}
-
-fn find_child_text(node: Node, kind: &str, source: &str) -> Option<String> {
-    let mut cursor = node.walk();
-    for child in node.children(&mut cursor) {
-        if child.kind() == kind {
-            return leaf_text(child, source);
-        }
-    }
-    None
-}
-
-fn leaf_text(node: Node, source: &str) -> Option<String> {
-    if node.child_count() == 0 {
-        return node
-            .utf8_text(source.as_bytes())
-            .ok()
-            .map(|s| s.trim().to_string());
-    }
-    let mut cursor = node.walk();
-    for child in node.children(&mut cursor) {
-        if child.kind() == "identifier" || child.kind().starts_with("kw_") {
-            return child
-                .utf8_text(source.as_bytes())
-                .ok()
-                .map(|s| s.trim().to_string());
-        }
-        if let Some(text) = leaf_text(child, source) {
-            return Some(text);
         }
     }
     None
@@ -242,11 +214,12 @@ mod tests {
 
     #[test]
     fn extract_signature_from_function() {
+        let pool = ParserPool::new();
         let (index, _) = make_index_with_func();
         let syms = index.find_definitions(SymbolKind::Function, "my_func");
         assert_eq!(syms.len(), 1);
 
-        let sig = extract_signature(&syms[0]).unwrap();
+        let sig = extract_signature(&syms[0], &pool).unwrap();
         assert_eq!(sig.name, "my_func");
         assert_eq!(sig.params.len(), 3);
         assert_eq!(sig.params[0].name.as_deref(), Some("a"));
@@ -266,8 +239,8 @@ mod tests {
         let tree = guard.parser_mut().parse(sql, None).unwrap();
         drop(guard);
 
-        // Cursor inside first argument (position of "1")
-        let result = find_active_function_call(&tree, sql, 15);
+        // Cursor inside first argument (byte column 15 = position of "1")
+        let result = find_active_function_call(&tree, sql, 0, 15);
         assert!(result.is_some());
         let (name, idx) = result.unwrap();
         assert_eq!(name, "my_func");
@@ -282,8 +255,8 @@ mod tests {
         let tree = guard.parser_mut().parse(sql, None).unwrap();
         drop(guard);
 
-        // Cursor inside second argument (position of "'hello'")
-        let result = find_active_function_call(&tree, sql, 19);
+        // Cursor inside second argument (byte column 19 = inside "'hello'")
+        let result = find_active_function_call(&tree, sql, 0, 19);
         assert!(result.is_some());
         let (name, idx) = result.unwrap();
         assert_eq!(name, "my_func");
@@ -298,8 +271,8 @@ mod tests {
         let tree = guard.parser_mut().parse(sql, None).unwrap();
         drop(guard);
 
-        // Cursor inside third argument (position of "42")
-        let result = find_active_function_call(&tree, sql, 27);
+        // Cursor inside third argument (byte column 27 = position of "42")
+        let result = find_active_function_call(&tree, sql, 0, 27);
         assert!(result.is_some());
         let (name, idx) = result.unwrap();
         assert_eq!(name, "my_func");
@@ -308,16 +281,16 @@ mod tests {
 
     #[test]
     fn signature_help_full() {
+        let pool = ParserPool::new();
         let (index, _) = make_index_with_func();
 
-        let pool = ParserPool::new();
         let call_sql = "SELECT my_func(1, 'hello', 42);";
         let mut guard = pool.acquire(pg_parse::parser::Language::Postgres);
         let tree = guard.parser_mut().parse(call_sql, None).unwrap();
         drop(guard);
 
-        // Cursor at second argument
-        let result = signature_help(&index, &tree, call_sql, 19);
+        // Cursor at second argument (byte column 19)
+        let result = signature_help(&index, &pool, &tree, call_sql, 0, 19);
         assert!(result.is_some());
         let (sig, active) = result.unwrap();
         assert_eq!(sig.name, "my_func");
@@ -334,7 +307,7 @@ mod tests {
         drop(guard);
 
         let index = WorkspaceIndex::new();
-        let result = signature_help(&index, &tree, sql, 7);
+        let result = signature_help(&index, &pool, &tree, sql, 0, 7);
         assert!(result.is_none());
     }
 }
