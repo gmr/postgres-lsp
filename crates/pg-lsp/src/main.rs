@@ -21,11 +21,23 @@ struct Cli {
         help = "Formatting style: river, mozilla, aweber, dbt, gitlab, kickstarter, mattmc3"
     )]
     format_style: Style,
+
+    /// PostgreSQL connection URL for live schema introspection
+    #[arg(
+        long,
+        short = 'd',
+        env = "DATABASE_URL",
+        help = "e.g., postgres://user:pass@localhost/dbname"
+    )]
+    database_url: Option<String>,
 }
 
 fn parse_style(s: &str) -> Result<Style, String> {
-    s.parse::<Style>()
-        .map_err(|_| format!("unknown style '{s}'; options: river, mozilla, aweber, dbt, gitlab, kickstarter, mattmc3"))
+    s.parse::<Style>().map_err(|_| {
+        format!(
+            "unknown style '{s}'; options: river, mozilla, aweber, dbt, gitlab, kickstarter, mattmc3"
+        )
+    })
 }
 
 #[tokio::main]
@@ -40,7 +52,9 @@ async fn main() {
         .init();
 
     let format_style = cli.format_style;
-    let (service, socket) =
-        LspService::new(move |client| server::Backend::new(client, format_style));
+    let database_url = cli.database_url;
+    let (service, socket) = LspService::new(move |client| {
+        server::Backend::new(client, format_style, database_url.clone())
+    });
     Server::new(stdin(), stdout(), socket).serve(service).await;
 }

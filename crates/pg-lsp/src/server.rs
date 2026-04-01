@@ -26,16 +26,18 @@ pub struct Backend {
     documents: DashMap<String, Document>,
     index: Arc<WorkspaceIndex>,
     format_style: Style,
+    database_url: Option<String>,
 }
 
 impl Backend {
-    pub fn new(client: Client, format_style: Style) -> Self {
+    pub fn new(client: Client, format_style: Style, database_url: Option<String>) -> Self {
         Self {
             client,
             pool: Arc::new(ParserPool::new()),
             documents: DashMap::new(),
             index: Arc::new(WorkspaceIndex::new()),
             format_style,
+            database_url,
         }
     }
 
@@ -275,6 +277,18 @@ impl LanguageServer for Backend {
 
     async fn initialized(&self, _params: InitializedParams) {
         info!("pg-lsp initialized");
+
+        // Load database schema in the background so it doesn't block other LSP requests.
+        if let Some(ref db_url) = self.database_url {
+            let index = Arc::clone(&self.index);
+            let url = db_url.clone();
+            tokio::spawn(async move {
+                match pg_schema::load_database_schema(&url, &index).await {
+                    Ok(count) => info!("loaded {count} symbols from database"),
+                    Err(e) => tracing::warn!("failed to load database schema: {e}"),
+                }
+            });
+        }
     }
 
     async fn shutdown(&self) -> Result<()> {
