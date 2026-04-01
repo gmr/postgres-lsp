@@ -26,19 +26,27 @@ fn main() {
     let lang: tree_sitter::Language = tree_sitter_postgres::LANGUAGE.into();
     parser.set_language(&lang).unwrap();
 
-    let sources = &[
-        "CREATE TABLE users (id int, name text);",
-        "CREATE TABLE public.users (id int);",
-        "CREATE FUNCTION add(a int, b int) RETURNS int LANGUAGE sql AS 'SELECT a + b';",
-        "CREATE FUNCTION test() RETURNS void LANGUAGE plpgsql AS $$BEGIN RAISE NOTICE 'hi'; END;$$;",
-        "SET search_path = $$public$$;",
-        "SELECT my_func(1, 'hello', 42);",
-        "CREATE FUNCTION my_func(a int, b text, c int) RETURNS void LANGUAGE sql AS 'SELECT 1';",
-    ];
+    let sources = &["CREATE TABLE users (id int, name text);"];
 
     for source in sources {
         println!("=== {} ===", source);
         let tree = parser.parse(source, None).unwrap();
+        dump(tree.root_node(), source, 0);
+        println!();
+    }
+
+    // PL/pgSQL grammar
+    let mut plpgsql_parser = Parser::new();
+    let plpgsql_lang: tree_sitter::Language = tree_sitter_postgres::LANGUAGE_PLPGSQL.into();
+    plpgsql_parser.set_language(&plpgsql_lang).unwrap();
+
+    let plpgsql_sources = &[
+        "DECLARE\n  v_count int;\nBEGIN\n  SELECT count(*) INTO v_count FROM users;\n  IF v_count > 0 THEN\n    RAISE NOTICE 'found %', v_count;\n  END IF;\n  RETURN v_count;\nEND;",
+    ];
+
+    for source in plpgsql_sources {
+        println!("=== PL/pgSQL ===");
+        let tree = plpgsql_parser.parse(source, None).unwrap();
         dump(tree.root_node(), source, 0);
         println!();
     }

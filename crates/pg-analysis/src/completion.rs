@@ -20,6 +20,7 @@ pub enum CompletionKind {
     Type,
     Schema,
     Sequence,
+    Variable,
 }
 
 const SQL_KEYWORDS: &[&str] = &[
@@ -245,5 +246,6 @@ fn symbol_kind_to_completion(kind: SymbolKind) -> CompletionKind {
         | SymbolKind::Policy
         | SymbolKind::Publication
         | SymbolKind::Subscription => CompletionKind::Table,
+        SymbolKind::Variable | SymbolKind::Cursor => CompletionKind::Variable,
     }
 }
