@@ -1,0 +1,12 @@
+[package]
+name = "pg-format"
+version = "0.1.0"
+description = "SQL formatting for the PostgreSQL LSP, powered by libpgfmt"
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+libpgfmt.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]

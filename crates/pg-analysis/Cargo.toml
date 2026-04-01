@@ -1,0 +1,17 @@
+[package]
+name = "pg-analysis"
+version = "0.1.0"
+description = "Symbol extraction, workspace index, and name resolution for PostgreSQL"
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+pg-parse = { path = "../pg-parse" }
+tree-sitter.workspace = true
+tree-sitter-postgres.workspace = true
+dashmap.workspace = true
+tracing.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+ropey.workspace = true

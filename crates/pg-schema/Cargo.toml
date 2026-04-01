@@ -1,0 +1,15 @@
+[package]
+name = "pg-schema"
+version = "0.1.0"
+description = "Live PostgreSQL database introspection via pg_catalog"
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+pg-analysis = { path = "../pg-analysis" }
+tokio-postgres.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+thiserror.workspace = true
+serde.workspace = true
+serde_json.workspace = true

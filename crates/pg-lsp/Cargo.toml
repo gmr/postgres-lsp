@@ -1,0 +1,26 @@
+[package]
+name = "pg-lsp"
+version = "0.1.0"
+description = "Language Server Protocol implementation for PostgreSQL and PL/pgSQL"
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "pg-lsp"
+path = "src/main.rs"
+
+[dependencies]
+pg-parse = { path = "../pg-parse" }
+pg-analysis = { path = "../pg-analysis" }
+pg-format = { path = "../pg-format" }
+tree-sitter.workspace = true
+tree-sitter-postgres.workspace = true
+tower-lsp.workspace = true
+tokio.workspace = true
+ropey.workspace = true
+dashmap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+clap = { version = "4", features = ["derive"] }
