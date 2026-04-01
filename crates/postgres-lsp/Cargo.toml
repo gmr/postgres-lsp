@@ -1,19 +1,19 @@
 [package]
-name = "pg-lsp"
+name = "postgres-lsp"
 version.workspace = true
 description = "Language Server Protocol implementation for PostgreSQL and PL/pgSQL"
 edition.workspace = true
 license.workspace = true
 
 [[bin]]
-name = "pg-lsp"
+name = "postgres-lsp"
 path = "src/main.rs"
 
 [dependencies]
-pg-parse.workspace = true
-pg-analysis.workspace = true
-pg-format.workspace = true
-pg-schema.workspace = true
+postgres-lsp-parse.workspace = true
+postgres-lsp-analysis.workspace = true
+postgres-lsp-format.workspace = true
+postgres-lsp-schema.workspace = true
 tree-sitter.workspace = true
 tree-sitter-postgres.workspace = true
 tower-lsp.workspace = true

@@ -12,29 +12,29 @@ cargo build
 cargo test
 
 # Run tests for a specific crate
-cargo test -p pg-parse
-cargo test -p pg-analysis
-cargo test -p pg-lsp
+cargo test -p postgres-lsp-parse
+cargo test -p postgres-lsp-analysis
+cargo test -p postgres-lsp
 
 # Run a specific test
-cargo test -p pg-analysis -- symbols::tests::extract_create_table
+cargo test -p postgres-lsp-analysis -- symbols::tests::extract_create_table
 
 # Run the LSP server (stdio transport)
-cargo run -p pg-lsp
+cargo run -p postgres-lsp
 
 # Dump parse tree for debugging
-cargo run -p pg-parse --example dump_tree
+cargo run -p postgres-lsp-parse --example dump_tree
 ```
 
 ## Architecture
 
 This is a Cargo workspace with five crates:
 
-- **pg-parse** — Document model with tree-sitter incremental parsing, parser pool, and PL/pgSQL injection handling. Core types: `Document`, `ParserPool`.
-- **pg-analysis** — Symbol extraction from parse trees, `DashMap`-backed workspace index, name resolution, completion, and hover logic. Core types: `Symbol`, `SymbolKind`, `QualifiedName`, `WorkspaceIndex`.
-- **pg-schema** — Optional live database introspection via `tokio-postgres` against `pg_catalog` (Phase 7).
-- **pg-format** — SQL formatting powered by [libpgfmt](https://crates.io/crates/libpgfmt). Supports 7 styles (River, Mozilla, Aweber, Dbt, Gitlab, Kickstarter, Mattmc3). Public API: `format_sql(source, options)` and `FormatOptions { style }`.
-- **pg-lsp** — Binary crate implementing the LSP via `tower-lsp`. Handles document sync, diagnostics, semantic tokens, go-to-definition, find references, completion, hover, document/workspace symbols, folding ranges, and rename.
+- **postgres-lsp-parse** — Document model with tree-sitter incremental parsing, parser pool, and PL/pgSQL injection handling. Core types: `Document`, `ParserPool`.
+- **postgres-lsp-analysis** — Symbol extraction from parse trees, `DashMap`-backed workspace index, name resolution, completion, and hover logic. Core types: `Symbol`, `SymbolKind`, `QualifiedName`, `WorkspaceIndex`.
+- **postgres-lsp-schema** — Optional live database introspection via `tokio-postgres` against `pg_catalog` (Phase 7).
+- **postgres-lsp-format** — SQL formatting powered by [libpgfmt](https://crates.io/crates/libpgfmt). Supports 7 styles (River, Mozilla, Aweber, Dbt, Gitlab, Kickstarter, Mattmc3). Public API: `format_sql(source, options)` and `FormatOptions { style }`.
+- **postgres-lsp** — Binary crate implementing the LSP via `tower-lsp`. Handles document sync, diagnostics, semantic tokens, go-to-definition, find references, completion, hover, document/workspace symbols, folding ranges, and rename.
 
 ### Key Design Constraints
 

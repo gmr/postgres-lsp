@@ -1,6 +1,6 @@
 pub mod catalog;
 
-use pg_analysis::WorkspaceIndex;
+use postgres_lsp_analysis::WorkspaceIndex;
 use tracing::info;
 
 pub use catalog::{CatalogError, DB_URI};

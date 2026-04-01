@@ -1,16 +1,16 @@
 use std::sync::Arc;
 
 use dashmap::DashMap;
-use pg_analysis::WorkspaceIndex;
-use pg_analysis::code_actions;
-use pg_analysis::completion::{self, CompletionContext};
-use pg_analysis::hover;
-use pg_analysis::resolve;
-use pg_analysis::signature;
-use pg_analysis::symbols::QualifiedName;
-use pg_format::Style;
-use pg_parse::ParserPool;
-use pg_parse::document::Document;
+use postgres_lsp_analysis::WorkspaceIndex;
+use postgres_lsp_analysis::code_actions;
+use postgres_lsp_analysis::completion::{self, CompletionContext};
+use postgres_lsp_analysis::hover;
+use postgres_lsp_analysis::resolve;
+use postgres_lsp_analysis::signature;
+use postgres_lsp_analysis::symbols::QualifiedName;
+use postgres_lsp_format::Style;
+use postgres_lsp_parse::ParserPool;
+use postgres_lsp_parse::document::Document;
 use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::*;
 use tower_lsp::{Client, LanguageServer};
@@ -171,7 +171,7 @@ fn node_range(node: tree_sitter::Node, source: &str) -> Range {
 /// Build an LSP Range from a Symbol's statement range, converting byte columns to UTF-16.
 /// `source` should be the file containing the symbol; pass the document map to look it up.
 fn symbol_range_with_source(
-    sym: &pg_analysis::symbols::Symbol,
+    sym: &postgres_lsp_analysis::symbols::Symbol,
     docs: &DashMap<String, Document>,
 ) -> Range {
     if let Some(doc) = docs.get(&sym.uri) {
@@ -198,7 +198,7 @@ fn symbol_range_with_source(
 
 /// Build an LSP Range from a SymbolRef, converting byte columns to UTF-16.
 fn ref_range_with_source(
-    r: &pg_analysis::symbols::SymbolRef,
+    r: &postgres_lsp_analysis::symbols::SymbolRef,
     docs: &DashMap<String, Document>,
 ) -> Range {
     if let Some(doc) = docs.get(&r.uri) {
@@ -222,8 +222,8 @@ fn ref_range_with_source(
     }
 }
 
-fn symbol_kind_to_lsp(kind: pg_analysis::SymbolKind) -> tower_lsp::lsp_types::SymbolKind {
-    use pg_analysis::SymbolKind as SK;
+fn symbol_kind_to_lsp(kind: postgres_lsp_analysis::SymbolKind) -> tower_lsp::lsp_types::SymbolKind {
+    use postgres_lsp_analysis::SymbolKind as SK;
     match kind {
         SK::Schema => tower_lsp::lsp_types::SymbolKind::NAMESPACE,
         SK::Table | SK::ForeignTable => tower_lsp::lsp_types::SymbolKind::CLASS,
@@ -244,7 +244,7 @@ fn symbol_kind_to_lsp(kind: pg_analysis::SymbolKind) -> tower_lsp::lsp_types::Sy
 }
 
 fn symbol_to_symbol_information(
-    sym: &pg_analysis::symbols::Symbol,
+    sym: &postgres_lsp_analysis::symbols::Symbol,
     uri: Url,
     docs: &DashMap<String, Document>,
 ) -> SymbolInformation {
@@ -269,7 +269,7 @@ impl LanguageServer for Backend {
         Ok(InitializeResult {
             capabilities: capabilities::server_capabilities(),
             server_info: Some(ServerInfo {
-                name: "pg-lsp".to_string(),
+                name: "postgres-lsp".to_string(),
                 version: Some(env!("CARGO_PKG_VERSION").to_string()),
             }),
         })
@@ -283,7 +283,7 @@ impl LanguageServer for Backend {
             let index = Arc::clone(&self.index);
             let url = db_url.clone();
             tokio::spawn(async move {
-                match pg_schema::load_database_schema(&url, &index).await {
+                match postgres_lsp_schema::load_database_schema(&url, &index).await {
                     Ok(count) => info!("loaded {count} symbols from database"),
                     Err(e) => tracing::warn!("failed to load database schema: {e}"),
                 }
@@ -780,11 +780,11 @@ impl LanguageServer for Backend {
         };
 
         let source = doc.text();
-        let options = pg_format::FormatOptions {
+        let options = postgres_lsp_format::FormatOptions {
             style: self.format_style,
         };
 
-        match pg_format::format_sql(&source, &options) {
+        match postgres_lsp_format::format_sql(&source, &options) {
             Ok(formatted) => {
                 if formatted == source {
                     return Ok(None);

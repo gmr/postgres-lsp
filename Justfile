@@ -55,19 +55,19 @@ release version: (set-version version)
 
 # Publish to crates.io (dry run) — in dependency order
 publish-dry:
-    cargo publish --dry-run -p pg-parse
-    cargo publish --dry-run -p pg-format
-    cargo publish --dry-run -p pg-analysis
-    cargo publish --dry-run -p pg-schema
-    cargo publish --dry-run -p pg-lsp
+    cargo publish --dry-run -p postgres-lsp-parse
+    cargo publish --dry-run -p postgres-lsp-format
+    cargo publish --dry-run -p postgres-lsp-analysis
+    cargo publish --dry-run -p postgres-lsp-schema
+    cargo publish --dry-run -p postgres-lsp
 
 # Publish to crates.io — in dependency order
 publish:
-    cargo publish -p pg-parse
-    cargo publish -p pg-format
-    cargo publish -p pg-analysis
-    cargo publish -p pg-schema
-    cargo publish -p pg-lsp
+    cargo publish -p postgres-lsp-parse
+    cargo publish -p postgres-lsp-format
+    cargo publish -p postgres-lsp-analysis
+    cargo publish -p postgres-lsp-schema
+    cargo publish -p postgres-lsp
 
 # Clean build artifacts
 clean:

@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use pg_analysis::symbols::{QualifiedName, Symbol, SymbolKind};
+use postgres_lsp_analysis::symbols::{QualifiedName, Symbol, SymbolKind};
 use tokio_postgres::Client;
 
 /// The synthetic URI used for database-sourced symbols.

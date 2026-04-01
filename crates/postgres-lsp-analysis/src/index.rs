@@ -3,7 +3,7 @@ use std::sync::Arc;
 use dashmap::DashMap;
 use tree_sitter::Tree;
 
-use pg_parse::injection::InjectedRegion;
+use postgres_lsp_parse::injection::InjectedRegion;
 
 use crate::symbols::{self, QualifiedName, Symbol, SymbolKind, SymbolRef};
 
@@ -206,7 +206,7 @@ impl Default for WorkspaceIndex {
 
 #[cfg(test)]
 mod tests {
-    use pg_parse::ParserPool;
+    use postgres_lsp_parse::ParserPool;
 
     use super::*;
 
@@ -216,7 +216,7 @@ mod tests {
         let index = WorkspaceIndex::new();
 
         let sql = "CREATE TABLE users (id int, name text);";
-        let mut guard = pool.acquire(pg_parse::parser::Language::Postgres);
+        let mut guard = pool.acquire(postgres_lsp_parse::parser::Language::Postgres);
         let tree = guard.parser_mut().parse(sql, None).unwrap();
         drop(guard);
 
@@ -233,7 +233,7 @@ mod tests {
         let index = WorkspaceIndex::new();
 
         let sql = "CREATE TABLE users (id int);";
-        let mut guard = pool.acquire(pg_parse::parser::Language::Postgres);
+        let mut guard = pool.acquire(postgres_lsp_parse::parser::Language::Postgres);
         let tree = guard.parser_mut().parse(sql, None).unwrap();
         drop(guard);
 
@@ -258,7 +258,7 @@ mod tests {
         let index = WorkspaceIndex::new();
 
         let sql = "CREATE TABLE user_accounts (id int);\nCREATE TABLE user_profiles (id int);";
-        let mut guard = pool.acquire(pg_parse::parser::Language::Postgres);
+        let mut guard = pool.acquire(postgres_lsp_parse::parser::Language::Postgres);
         let tree = guard.parser_mut().parse(sql, None).unwrap();
         drop(guard);
 

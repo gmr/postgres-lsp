@@ -10,7 +10,7 @@ jobs:
 
     environment:
       name: crates-io
-      url: https://crates.io/crates/pg-lsp
+      url: https://crates.io/crates/postgres-lsp
 
     permissions:
       id-token: write
@@ -50,27 +50,27 @@ jobs:
         uses: rust-lang/crates-io-auth-action@v1
         id: auth
 
-      - name: Publish pg-parse
-        run: cargo publish -p pg-parse
+      - name: Publish postgres-lsp-parse
+        run: cargo publish -p postgres-lsp-parse
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
 
-      - name: Publish pg-format
-        run: cargo publish -p pg-format
+      - name: Publish postgres-lsp-format
+        run: cargo publish -p postgres-lsp-format
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
 
-      - name: Publish pg-analysis
-        run: cargo publish -p pg-analysis
+      - name: Publish postgres-lsp-analysis
+        run: cargo publish -p postgres-lsp-analysis
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
 
-      - name: Publish pg-schema
-        run: cargo publish -p pg-schema
+      - name: Publish postgres-lsp-schema
+        run: cargo publish -p postgres-lsp-schema
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
 
-      - name: Publish pg-lsp
-        run: cargo publish -p pg-lsp
+      - name: Publish postgres-lsp
+        run: cargo publish -p postgres-lsp
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}

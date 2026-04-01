@@ -45,12 +45,15 @@ impl SignatureInfo {
 
 /// Extract parameter information from a function definition's source text
 /// by re-parsing its definition tree.
-pub fn extract_signature(symbol: &Symbol, pool: &pg_parse::ParserPool) -> Option<SignatureInfo> {
+pub fn extract_signature(
+    symbol: &Symbol,
+    pool: &postgres_lsp_parse::ParserPool,
+) -> Option<SignatureInfo> {
     if symbol.kind != SymbolKind::Function && symbol.kind != SymbolKind::Procedure {
         return None;
     }
 
-    let mut guard = pool.acquire(pg_parse::parser::Language::Postgres);
+    let mut guard = pool.acquire(postgres_lsp_parse::parser::Language::Postgres);
     let tree = guard.parser_mut().parse(&symbol.definition_text, None)?;
     let root = tree.root_node();
 
@@ -100,7 +103,7 @@ pub fn find_active_function_call(
 /// Look up signature help for a function call at the given position.
 pub fn signature_help(
     index: &WorkspaceIndex,
-    pool: &pg_parse::ParserPool,
+    pool: &postgres_lsp_parse::ParserPool,
     tree: &tree_sitter::Tree,
     source: &str,
     row: usize,
@@ -201,14 +204,14 @@ fn find_node_by_kind<'a>(node: Node<'a>, kind: &str) -> Option<Node<'a>> {
 
 #[cfg(test)]
 mod tests {
-    use pg_parse::ParserPool;
+    use postgres_lsp_parse::ParserPool;
 
     use super::*;
 
     fn make_index_with_func() -> (WorkspaceIndex, String) {
         let pool = ParserPool::new();
         let sql = "CREATE FUNCTION my_func(a int, b text, c int) RETURNS void LANGUAGE sql AS 'SELECT 1';";
-        let mut guard = pool.acquire(pg_parse::parser::Language::Postgres);
+        let mut guard = pool.acquire(postgres_lsp_parse::parser::Language::Postgres);
         let tree = guard.parser_mut().parse(sql, None).unwrap();
         drop(guard);
 
@@ -240,7 +243,7 @@ mod tests {
     fn find_active_param_first() {
         let pool = ParserPool::new();
         let sql = "SELECT my_func(1, 'hello', 42);";
-        let mut guard = pool.acquire(pg_parse::parser::Language::Postgres);
+        let mut guard = pool.acquire(postgres_lsp_parse::parser::Language::Postgres);
         let tree = guard.parser_mut().parse(sql, None).unwrap();
         drop(guard);
 
@@ -256,7 +259,7 @@ mod tests {
     fn find_active_param_second() {
         let pool = ParserPool::new();
         let sql = "SELECT my_func(1, 'hello', 42);";
-        let mut guard = pool.acquire(pg_parse::parser::Language::Postgres);
+        let mut guard = pool.acquire(postgres_lsp_parse::parser::Language::Postgres);
         let tree = guard.parser_mut().parse(sql, None).unwrap();
         drop(guard);
 
@@ -272,7 +275,7 @@ mod tests {
     fn find_active_param_third() {
         let pool = ParserPool::new();
         let sql = "SELECT my_func(1, 'hello', 42);";
-        let mut guard = pool.acquire(pg_parse::parser::Language::Postgres);
+        let mut guard = pool.acquire(postgres_lsp_parse::parser::Language::Postgres);
         let tree = guard.parser_mut().parse(sql, None).unwrap();
         drop(guard);
 
@@ -290,7 +293,7 @@ mod tests {
         let (index, _) = make_index_with_func();
 
         let call_sql = "SELECT my_func(1, 'hello', 42);";
-        let mut guard = pool.acquire(pg_parse::parser::Language::Postgres);
+        let mut guard = pool.acquire(postgres_lsp_parse::parser::Language::Postgres);
         let tree = guard.parser_mut().parse(call_sql, None).unwrap();
         drop(guard);
 
@@ -307,7 +310,7 @@ mod tests {
     fn no_signature_outside_function_call() {
         let pool = ParserPool::new();
         let sql = "SELECT 1;";
-        let mut guard = pool.acquire(pg_parse::parser::Language::Postgres);
+        let mut guard = pool.acquire(postgres_lsp_parse::parser::Language::Postgres);
         let tree = guard.parser_mut().parse(sql, None).unwrap();
         drop(guard);
 

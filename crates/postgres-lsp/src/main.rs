@@ -1,5 +1,5 @@
 use clap::Parser;
-use pg_format::Style;
+use postgres_lsp_format::Style;
 use tokio::io::{stdin, stdout};
 use tower_lsp::{LspService, Server};
 use tracing_subscriber::EnvFilter;
@@ -10,7 +10,10 @@ mod semantic_tokens;
 mod server;
 
 #[derive(Parser)]
-#[command(name = "pg-lsp", about = "Language Server for PostgreSQL and PL/pgSQL")]
+#[command(
+    name = "postgres-lsp",
+    about = "Language Server for PostgreSQL and PL/pgSQL"
+)]
 struct Cli {
     /// SQL formatting style
     #[arg(

@@ -1,5 +1,5 @@
 [package]
-name = "pg-parse"
+name = "postgres-lsp-parse"
 version.workspace = true
 description = "PostgreSQL/PL-pgSQL document model with incremental tree-sitter parsing"
 edition.workspace = true

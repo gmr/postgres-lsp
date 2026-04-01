@@ -1,4 +1,4 @@
-use pg_parse::document::ParseError;
+use postgres_lsp_parse::document::ParseError;
 use tower_lsp::lsp_types::*;
 
 /// Convert parse errors into LSP diagnostics.
@@ -17,7 +17,7 @@ pub fn to_diagnostics(errors: &[ParseError]) -> Vec<Diagnostic> {
                 },
             },
             severity: Some(DiagnosticSeverity::ERROR),
-            source: Some("pg-lsp".to_string()),
+            source: Some("postgres-lsp".to_string()),
             message: e.message.clone(),
             ..Default::default()
         })

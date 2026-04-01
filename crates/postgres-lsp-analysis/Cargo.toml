@@ -1,12 +1,12 @@
 [package]
-name = "pg-analysis"
+name = "postgres-lsp-analysis"
 version.workspace = true
 description = "Symbol extraction, workspace index, and name resolution for PostgreSQL"
 edition.workspace = true
 license.workspace = true
 
 [dependencies]
-pg-parse.workspace = true
+postgres-lsp-parse.workspace = true
 tree-sitter.workspace = true
 tree-sitter-postgres.workspace = true
 dashmap.workspace = true

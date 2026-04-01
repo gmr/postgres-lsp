@@ -1,12 +1,12 @@
 [package]
-name = "pg-schema"
+name = "postgres-lsp-schema"
 version.workspace = true
 description = "Live PostgreSQL database introspection via pg_catalog"
 edition.workspace = true
 license.workspace = true
 
 [dependencies]
-pg-analysis.workspace = true
+postgres-lsp-analysis.workspace = true
 tokio-postgres.workspace = true
 tokio.workspace = true
 tracing.workspace = true

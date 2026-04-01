@@ -605,13 +605,13 @@ fn map_position(
 
 #[cfg(test)]
 mod tests {
-    use pg_parse::ParserPool;
+    use postgres_lsp_parse::ParserPool;
 
     use super::*;
 
     fn parse_and_extract(sql: &str) -> Vec<Symbol> {
         let pool = ParserPool::new();
-        let mut guard = pool.acquire(pg_parse::parser::Language::Postgres);
+        let mut guard = pool.acquire(postgres_lsp_parse::parser::Language::Postgres);
         let tree = guard.parser_mut().parse(sql, None).unwrap();
         extract_symbols(&tree, sql, "test.sql")
     }
@@ -649,7 +649,7 @@ mod tests {
     fn extract_references_from_select() {
         let pool = ParserPool::new();
         let sql = "SELECT id, name FROM users WHERE id > 0;";
-        let mut guard = pool.acquire(pg_parse::parser::Language::Postgres);
+        let mut guard = pool.acquire(postgres_lsp_parse::parser::Language::Postgres);
         let tree = guard.parser_mut().parse(sql, None).unwrap();
         let refs = extract_references(&tree, sql, "test.sql");
         assert!(!refs.is_empty(), "should find references in SELECT");
@@ -659,7 +659,7 @@ mod tests {
     fn extract_plpgsql_variables() {
         let pool = ParserPool::new();
         let plpgsql = "DECLARE\n  v_count int;\n  v_name text;\nBEGIN\n  RETURN v_count;\nEND;";
-        let mut guard = pool.acquire(pg_parse::parser::Language::PlPgSql);
+        let mut guard = pool.acquire(postgres_lsp_parse::parser::Language::PlPgSql);
         let tree = guard.parser_mut().parse(plpgsql, None).unwrap();
         drop(guard);
 
@@ -682,7 +682,7 @@ BEGIN
   RETURN v_result;
 END;
 $$;"#;
-        let doc = pg_parse::Document::new("test.sql".into(), sql, &pool);
+        let doc = postgres_lsp_parse::Document::new("test.sql".into(), sql, &pool);
         let tree = doc.tree().unwrap();
         let injections = doc.injections();
 
