@@ -12,8 +12,11 @@ A Language Server Protocol (LSP) implementation for PostgreSQL and PL/pgSQL, bui
 - **Find References** — Find all usages of a symbol across the workspace
 - **Hover** — Show definition source on hover
 - **Completion** — Context-aware completion for keywords, tables, columns, and functions
+- **Signature Help** — Parameter hints for function calls
 - **Folding Ranges** — Collapse multi-line statements
 - **Rename** — Rename symbols across the workspace
+- **Code Actions** — Quick fixes and refactor rewrites
+- **Formatting** — Reformat SQL using one of several style guides
 - **PL/pgSQL Support** — Parses PL/pgSQL function bodies with language injection
 
 ## Installation
