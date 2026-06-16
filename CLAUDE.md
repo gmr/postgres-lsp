@@ -33,7 +33,7 @@ This is a Cargo workspace with five crates:
 - **postgres-lsp-parse** — Document model with tree-sitter incremental parsing, parser pool, and PL/pgSQL injection handling. Core types: `Document`, `ParserPool`.
 - **postgres-lsp-analysis** — Symbol extraction from parse trees, `DashMap`-backed workspace index, name resolution, completion, and hover logic. Core types: `Symbol`, `SymbolKind`, `QualifiedName`, `WorkspaceIndex`.
 - **postgres-lsp-schema** — Optional live database introspection via `tokio-postgres` against `pg_catalog` (Phase 7).
-- **postgres-lsp-format** — SQL formatting powered by [libpgfmt](https://crates.io/crates/libpgfmt). Supports 7 styles (River, Mozilla, Aweber, Dbt, Gitlab, Kickstarter, Mattmc3). Public API: `format_sql(source, options)` and `FormatOptions { style }`.
+- **postgres-lsp-format** — SQL formatting powered by [libpgfmt](https://crates.io/crates/libpgfmt). Supports 8 styles (River, Mozilla, Aweber, Dbt, Gitlab, Kickstarter, Mattmc3, PgDump). Public API: `format_sql(source, options)` and `FormatOptions { style }`.
 - **postgres-lsp** — Binary crate implementing the LSP via `tower-lsp`. Handles document sync, diagnostics, semantic tokens, go-to-definition, find references, completion, hover, document/workspace symbols, folding ranges, and rename.
 
 ### Key Design Constraints

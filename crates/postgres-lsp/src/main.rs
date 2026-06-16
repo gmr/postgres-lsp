@@ -21,7 +21,7 @@ struct Cli {
         short = 's',
         default_value = "aweber",
         value_parser = parse_style,
-        help = "Formatting style: river, mozilla, aweber, dbt, gitlab, kickstarter, mattmc3"
+        help = "Formatting style: river, mozilla, aweber, dbt, gitlab, kickstarter, mattmc3, pg_dump"
     )]
     format_style: Style,
 
@@ -38,7 +38,7 @@ struct Cli {
 fn parse_style(s: &str) -> Result<Style, String> {
     s.parse::<Style>().map_err(|_| {
         format!(
-            "unknown style '{s}'; options: river, mozilla, aweber, dbt, gitlab, kickstarter, mattmc3"
+            "unknown style '{s}'; options: river, mozilla, aweber, dbt, gitlab, kickstarter, mattmc3, pg_dump"
         )
     })
 }
