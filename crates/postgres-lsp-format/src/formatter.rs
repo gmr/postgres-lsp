@@ -91,6 +91,24 @@ mod tests {
     }
 
     #[test]
+    fn format_with_pg_dump_style() {
+        let sql = "select a, b from users where active = true";
+        let opts = FormatOptions {
+            style: Style::PgDump,
+        };
+        let result = format_sql(sql, &opts).unwrap();
+        assert!(
+            result.contains("SELECT"),
+            "expected uppercase SELECT with pg_dump style, got: {result}"
+        );
+    }
+
+    #[test]
+    fn parse_pg_dump_style() {
+        assert_eq!("pg_dump".parse::<Style>().unwrap(), Style::PgDump);
+    }
+
+    #[test]
     fn format_plpgsql_block() {
         let code = "begin\nraise notice 'hello';\nend;";
         let result = format_sql(code, &FormatOptions::default()).unwrap();
