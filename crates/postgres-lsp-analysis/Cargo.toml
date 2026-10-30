@@ -3,6 +3,7 @@ name = "postgres-lsp-analysis"
 version.workspace = true
 description = "Symbol extraction, workspace index, and name resolution for PostgreSQL"
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 readme.workspace = true
