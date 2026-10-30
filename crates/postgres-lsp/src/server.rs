@@ -789,16 +789,9 @@ impl LanguageServer for Backend {
                 if formatted == source {
                     return Ok(None);
                 }
-                let line_count = source.lines().count();
-                let (end_line, end_char) = if source.ends_with('\n') {
-                    // Trailing newline: position is start of the next (empty) line.
-                    (line_count as u32, 0)
-                } else if line_count == 0 {
-                    (0, 0)
-                } else {
-                    let last_line_len = source.lines().last().map(|l| l.len()).unwrap_or(0);
-                    ((line_count - 1) as u32, last_line_len as u32)
-                };
+                // Use the rope for the end position so that the line count
+                // and the UTF-16 column agree with the document model.
+                let (end_line, end_char) = doc.end_position();
                 Ok(Some(vec![TextEdit {
                     range: Range {
                         start: Position {
@@ -806,8 +799,8 @@ impl LanguageServer for Backend {
                             character: 0,
                         },
                         end: Position {
-                            line: end_line,
-                            character: end_char,
+                            line: end_line as u32,
+                            character: end_char as u32,
                         },
                     },
                     new_text: formatted,
