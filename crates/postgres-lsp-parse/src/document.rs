@@ -170,12 +170,23 @@ impl Document {
     }
 
     /// Convert a byte offset in the current rope to a tree-sitter point.
+    ///
+    /// Tree-sitter counts only LF as a line break. Ropey also counts CR,
+    /// U+2028 and other separators, so we do not use the rope line index.
+    // ponytail: O(n) scan per call, the re-parse after each edit is O(n) too.
     fn byte_to_point(&self, byte: usize) -> Point {
-        let row = self.rope.byte_to_line(byte);
-        Point {
-            row,
-            column: byte - self.rope.line_to_byte(row),
+        let mut point = Point { row: 0, column: 0 };
+        for chunk in self.rope.byte_slice(..byte).chunks() {
+            for b in chunk.bytes() {
+                if b == b'\n' {
+                    point.row += 1;
+                    point.column = 0;
+                } else {
+                    point.column += 1;
+                }
+            }
         }
+        point
     }
 
     /// Collect all ERROR and MISSING nodes from the parse tree and injected regions.
@@ -406,5 +417,18 @@ $$;"#;
         let doc = Document::new("test.sql".into(), "SELECT 1;\r\nSELECT 'é😀';", &pool);
         // UTF-16 length of the last line: "SELECT 'é😀';" is 13 code units.
         assert_eq!(doc.end_position(), (1, 13));
+    }
+
+    /// Ropey counts a bare CR and U+2028 as line breaks, but tree-sitter
+    /// counts only LF. Tree-sitter points must count only LF.
+    #[test]
+    fn byte_to_point_counts_only_lf() {
+        let pool = ParserPool::new();
+        let mut doc = Document::new("test.sql".into(), "SELECT 1;\n", &pool);
+        doc.apply_edit(1, 0, 1, 0, "SELECT 'a\rb\u{2028}c';\nSELECT 2;", &pool);
+        let text = doc.text();
+        assert_eq!(doc.byte_to_point(text.len()), Point { row: 2, column: 9 });
+        let tree = doc.tree().unwrap();
+        assert_eq!(tree.root_node().end_position(), Point { row: 2, column: 9 });
     }
 }
