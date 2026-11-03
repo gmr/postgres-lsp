@@ -3,6 +3,7 @@ name = "postgres-lsp"
 version.workspace = true
 description = "Language Server Protocol implementation for PostgreSQL and PL/pgSQL"
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 readme.workspace = true

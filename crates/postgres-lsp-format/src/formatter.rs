@@ -109,6 +109,33 @@ mod tests {
     }
 
     #[test]
+    fn reject_token_outside_statement() {
+        // libpgfmt 1.4 rejects stray tokens at the root of the parse tree
+        // instead of dropping them from the output.
+        for sql in [
+            "1 SELECT random();",
+            "SELECT random() 1;",
+            "SELECT 1; 2 SELECT 2;",
+        ] {
+            let err = format_sql(sql, &FormatOptions::default()).unwrap_err();
+            assert!(
+                err.to_string().contains("Syntax error"),
+                "expected a syntax error for {sql:?}, got: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn format_decimal_literal() {
+        // Decimal literals used to trip the old error-size threshold.
+        let result = format_sql("select 800.00;", &FormatOptions::default()).unwrap();
+        assert!(
+            result.contains("800.00"),
+            "expected the literal preserved, got: {result}"
+        );
+    }
+
+    #[test]
     fn format_plpgsql_block() {
         let code = "begin\nraise notice 'hello';\nend;";
         let result = format_sql(code, &FormatOptions::default()).unwrap();

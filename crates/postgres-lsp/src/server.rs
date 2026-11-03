@@ -11,7 +11,7 @@ use postgres_lsp_analysis::symbols::QualifiedName;
 use postgres_lsp_format::Style;
 use postgres_lsp_parse::ParserPool;
 use postgres_lsp_parse::document::Document;
-use tower_lsp::jsonrpc::Result;
+use tower_lsp::jsonrpc::{self, Result};
 use tower_lsp::lsp_types::*;
 use tower_lsp::{Client, LanguageServer};
 use tracing::info;
@@ -19,6 +19,9 @@ use tracing::info;
 use crate::capabilities;
 use crate::diagnostics;
 use crate::semantic_tokens;
+
+/// LSP `RequestFailed` error code: the request was valid but could not be carried out.
+const REQUEST_FAILED: i64 = -32803;
 
 pub struct Backend {
     client: Client,
@@ -807,8 +810,16 @@ impl LanguageServer for Backend {
                 }]))
             }
             Err(e) => {
+                // libpgfmt rejects documents whose parse tree contains errors,
+                // including stray tokens outside any statement. Report the
+                // failure so the client does not silently do nothing; the
+                // offending position is already flagged as a diagnostic.
                 tracing::warn!("formatting failed: {e}");
-                Ok(None)
+                Err(jsonrpc::Error {
+                    code: jsonrpc::ErrorCode::ServerError(REQUEST_FAILED),
+                    message: format!("Cannot format document: {e}").into(),
+                    data: None,
+                })
             }
         }
     }

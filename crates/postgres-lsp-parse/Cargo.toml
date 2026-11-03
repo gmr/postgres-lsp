@@ -3,6 +3,7 @@ name = "postgres-lsp-parse"
 version.workspace = true
 description = "PostgreSQL/PL-pgSQL document model with incremental tree-sitter parsing"
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 readme.workspace = true

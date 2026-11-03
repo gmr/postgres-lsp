@@ -3,6 +3,7 @@ name = "postgres-lsp-format"
 version.workspace = true
 description = "SQL formatting for the PostgreSQL LSP, powered by libpgfmt"
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 readme.workspace = true

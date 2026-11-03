@@ -3,6 +3,7 @@ name = "postgres-lsp-schema"
 version.workspace = true
 description = "Live PostgreSQL database introspection via pg_catalog"
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 readme.workspace = true
